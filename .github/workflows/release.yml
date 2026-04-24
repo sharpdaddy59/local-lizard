@@ -1,0 +1,90 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        project:
+          - name: LocalLizard.Web
+            artifact: web-ui
+          - name: LocalLizard.Telegram
+            artifact: telegram-bot
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish ${{ matrix.project.name }}
+        run: |
+          dotnet publish src/${{ matrix.project.name }} \
+            -c Release \
+            -r linux-x64 \
+            --self-contained \
+            -o publish/${{ matrix.project.name }}
+
+      - name: Create archive
+        run: |
+          cd publish
+          tar czf ../${{ matrix.project.artifact }}-linux-x64.tar.gz ${{ matrix.project.name }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.project.artifact }}
+          path: ${{ matrix.project.artifact }}-linux-x64.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: LocalLizard ${{ github.ref_name }}
+          body: |
+            Automated self-contained build for Linux x64.
+
+            **Includes:**
+            - LocalLizard.Web — ASP.NET web UI (runs on port 5190)
+            - LocalLizard.Telegram — Telegram bot
+
+            **Usage:**
+            ```bash
+            tar xzf web-ui-linux-x64.tar.gz
+            cd LocalLizard.Web
+            ./LocalLizard.Web --urls "http://0.0.0.0:5000"
+            ```
+
+            ```bash
+            tar xzf telegram-bot-linux-x64.tar.gz
+            cd LocalLizard.Telegram
+            LIZARD_TELEGRAM_BOT_TOKEN=your-token ./LocalLizard.Telegram
+            ```
+
+            **Requirements:**
+            - Linux x86_64
+            - ffmpeg (for voice pipeline)
+            - Piper TTS binary + voice model
+            - Whisper ggml-base.bin
+            - Gemma 3 1B GGUF model
+          files: |
+            artifacts/*/*.tar.gz
