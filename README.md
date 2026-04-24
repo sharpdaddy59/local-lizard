@@ -176,10 +176,10 @@ All configurable via environment variables or `LizardConfig`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `LIZARD_MODEL_PATH` | (brazos path) | Path to GGUF model file |
-| `LIZARD_WHISPER_MODEL_PATH` | (brazos path) | Path to Whisper ggml-base.bin |
-| `LIZARD_PIPER_PATH` | (brazos path) | Path to Piper binary |
-| `LIZARD_PIPER_MODEL` | (brazos path) | Path to Piper .onnx voice model |
+| `LIZARD_MODEL_PATH` | (auto-detected) | Path to GGUF model file |
+| `LIZARD_WHISPER_MODEL_PATH` | (auto-detected) | Path to Whisper ggml-base.bin |
+| `LIZARD_PIPER_PATH` | (auto-detected) | Path to Piper binary |
+| `LIZARD_PIPER_MODEL` | (auto-detected) | Path to Piper .onnx voice model |
 | `LIZARD_WAKE_PHRASE` | `hey lizard` | Wake word trigger phrase |
 | `LIZARD_TELEGRAM_BOT_TOKEN` | (empty) | Telegram bot API token |
 
