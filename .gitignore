@@ -1,0 +1,53 @@
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# NuGet
+*.nupkg
+packages/
+*.nuget.props
+*.nuget.targets
+
+# .NET
+*.dll
+*.pdb
+*.so
+*.dylib
+*.exe
+*.runtimeconfig.json
+*.deps.json
+apphost
+
+# LLM models
+*.gguf
+*.bin
+models/
+
+# Audio output
+*.wav
+*.mp3
+*.ogg
+*.aac
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
