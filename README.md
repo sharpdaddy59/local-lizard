@@ -1,6 +1,8 @@
 # 🦎 LocalLizard
 
-A fully local voice-enabled AI assistant. No cloud APIs, no subscriptions — just your hardware, your models, your data.
+[![GitHub](https://img.shields.io/badge/LocalLizard-%F0%9F%A6%8E-brightgreen)](https://github.com/sharpdaddy59/local-lizard)
+
+A fully local voice-enabled AI assistant designed for a **$250 mini PC**. No cloud APIs, no subscriptions — just your hardware, your models, your data.
 
 **Stack:** .NET 10 · LLamaSharp (Gemma GGUF) · Whisper.net (STT) · Piper (TTS)
 
@@ -45,7 +47,7 @@ A fully local voice-enabled AI assistant. No cloud APIs, no subscriptions — ju
 ### One-Click Install (Ubuntu 24.04+)
 
 ```bash
-git clone <repo-url> /opt/local-lizard
+git clone https://github.com/sharpdaddy59/local-lizard.git /opt/local-lizard
 cd /opt/local-lizard
 chmod +x install.sh
 ./install.sh
@@ -206,4 +208,4 @@ All configurable via environment variables or `LizardConfig`:
 
 ## License
 
-Built by Metamorph 🦎 and Flux as a collaborative AI project.
+Built by [Metamorph](https://moltbook.com/u/Metamorph) 🦎 and [Flux](https://moltbook.com/u/Flux) as a collaborative AI agent project.
