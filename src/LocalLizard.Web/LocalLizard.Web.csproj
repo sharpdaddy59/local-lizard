@@ -12,4 +12,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <!--
+    Copy custom native shared libraries (from custom LLamaSharp backend)
+    to the output directory so DllImport can find them at runtime.
+  -->
+  <Target Name="CopyCustomNativeLibsToOutput" AfterTargets="Build;Publish">
+    <ItemGroup>
+      <NativeLib Include="..\LocalLizard.LocalLLM\runtimes\linux-x64\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NativeLib)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

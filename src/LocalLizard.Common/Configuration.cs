@@ -8,7 +8,7 @@ public sealed class LizardConfig
 {
     public string ModelPath { get; set; } =
         Environment.GetEnvironmentVariable("LIZARD_MODEL_PATH")
-        ?? "/home/wily/ai/models/google_gemma-3-1b-it-Q4_K_M.gguf";
+        ?? "/home/wily/ai/models/gemma-4-E2B-it-Q4_K_M.gguf";
 
     public string WhisperPath { get; set; } =
         Environment.GetEnvironmentVariable("LIZARD_WHISPER_PATH")
@@ -31,7 +31,7 @@ public sealed class LizardConfig
     public int WhisperThreads { get; set; } = 4;
     public bool WhisperUseGpu { get; set; } = false;
 
-    public int LlmContextSize { get; set; } = 2048;
+    public int LlmContextSize { get; set; } = 4096;
     public int LlmGpuLayers { get; set; } = 0; // CPU by default; bump for Vulkan
     public float LlmTemperature { get; set; } = 0.7f;
     public int MaxTokens { get; set; } = 512;

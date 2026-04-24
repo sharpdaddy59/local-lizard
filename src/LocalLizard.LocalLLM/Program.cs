@@ -23,8 +23,18 @@ while (true)
     if (string.IsNullOrWhiteSpace(input)) continue;
     if (input.Equals("quit", StringComparison.OrdinalIgnoreCase)) break;
 
-    var response = await llm.CompleteAsync(input, chatHistory: chatHistory, ct: default);
-    Console.WriteLine($"Bot> {response}\n");
+    var response = string.Empty;
+    try
+    {
+        response = await llm.CompleteAsync(input, chatHistory: chatHistory, ct: default);
+        Console.WriteLine($"Bot> {response}\n");
+    }
+    catch (Exception ex)
+    {
+        Console.Error.WriteLine($"Error: {ex.Message}");
+        Console.Error.WriteLine(ex.StackTrace);
+        break;
+    }
 
     chatHistory.Add(("user", input));
     chatHistory.Add(("assistant", response));

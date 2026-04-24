@@ -8,9 +8,20 @@ namespace LocalLizard.LocalLLM;
 
 /// <summary>
 /// Loads a GGUF model via LLamaSharp and provides chat-style text completion.
+/// Note: Uses a simple chat template format rather than the model's native GGUF
+/// template, because LLamaSharp's PromptTemplateTransformer fails with Gemma 4's
+/// complex multimodal template (MissingTemplateException).
+/// The simple format works because Gemma 4 understands:
+///   <|turn>system\n...<turn|>\n<|turn>user\n...<turn|>\n<|turn>model\n
+/// with BOS added automatically by the tokenizer (add_bos_token=true in GGUF).
 /// </summary>
 public sealed class LlmService : IDisposable
 {
+    private const string UserPrefix = "<|turn>user\n";
+    private const string ModelPrefix = "<|turn>model\n";
+    private const string TurnSep = "<turn|>\n";
+    private const string SysPrefix = "<|turn>system\n";
+
     private readonly LizardConfig _config;
     private LLamaWeights? _weights;
     private LLamaContext? _context;
@@ -54,7 +65,49 @@ public sealed class LlmService : IDisposable
     }
 
     /// <summary>
-    /// Run a chat completion using the session API with history management.
+    /// Build a prompt in Gemma 4's chat format from history and user message.
+    /// The tokenizer auto-prepends BOS token (add_bos_token=true).
+    /// </summary>
+    private static string BuildGemma4Prompt(
+        string userMessage,
+        string? systemPrompt,
+        IReadOnlyList<(string Role, string Content)>? chatHistory)
+    {
+        var sb = new StringBuilder();
+
+        // System prompt
+        if (!string.IsNullOrEmpty(systemPrompt))
+        {
+            sb.Append(SysPrefix);
+            sb.Append(systemPrompt.Trim());
+            sb.Append(TurnSep);
+        }
+
+        // Chat history (alternating user/assistant)
+        if (chatHistory is not null)
+        {
+            foreach (var (role, content) in chatHistory)
+            {
+                bool isUser = role.Equals("user", StringComparison.OrdinalIgnoreCase);
+                sb.Append(isUser ? UserPrefix : ModelPrefix);
+                sb.Append(content.Trim());
+                sb.Append(TurnSep);
+            }
+        }
+
+        // Current user message
+        sb.Append(UserPrefix);
+        sb.Append(userMessage.Trim());
+        sb.Append(TurnSep);
+
+        // Generation prompt
+        sb.Append(ModelPrefix);
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Run a chat completion.
     /// </summary>
     public async Task<string> CompleteAsync(
         string userMessage,
@@ -67,37 +120,19 @@ public sealed class LlmService : IDisposable
         if (_weights is null || _context is null)
             throw new InvalidOperationException("Model not loaded. Call LoadAsync first.");
 
+        var prompt = BuildGemma4Prompt(userMessage, systemPrompt, chatHistory);
+
         var executor = new InteractiveExecutor(_context);
-
-        var history = new ChatHistory();
-        history.AddMessage(AuthorRole.System,
-            systemPrompt ?? "You are a helpful, concise assistant running locally on a small device. Keep responses short.");
-
-        if (chatHistory is not null)
-        {
-            foreach (var (role, content) in chatHistory)
-            {
-                var authorRole = role.Equals("user", StringComparison.OrdinalIgnoreCase)
-                    ? AuthorRole.User
-                    : AuthorRole.Assistant;
-                history.AddMessage(authorRole, content);
-            }
-        }
-
-        var session = new ChatSession(executor, history);
+        var result = new StringBuilder();
 
         var inferenceParams = new InferenceParams
         {
             MaxTokens = _config.MaxTokens,
             SamplingPipeline = CreateSamplingPipeline(),
-            AntiPrompts = ["<end_of_turn>", "\nUser:", "\nuser:"],
+            AntiPrompts = ["<turn|>"],
         };
 
-        var result = new StringBuilder();
-        await foreach (var token in session.ChatAsync(
-            new ChatHistory.Message(AuthorRole.User, userMessage),
-            inferenceParams,
-            ct))
+        await foreach (var token in executor.InferAsync(prompt, inferenceParams, ct))
         {
             result.Append(token);
         }
@@ -122,6 +157,7 @@ public sealed class LlmService : IDisposable
         {
             MaxTokens = _config.MaxTokens,
             SamplingPipeline = CreateSamplingPipeline(),
+            AntiPrompts = ["<turn|>"],
         };
 
         await foreach (var token in executor.InferAsync(prompt, inferenceParams, ct))

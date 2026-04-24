@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -8,12 +8,27 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Custom LLamaSharp from local feed (gemma4 capable) -->
     <PackageReference Include="LLamaSharp" Version="0.26.0" />
-    <PackageReference Include="LLamaSharp.Backend.Cpu" Version="0.26.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\LocalLizard.Common\LocalLizard.Common.csproj" />
   </ItemGroup>
+
+  <!--
+    Copy our custom native shared libraries to the output.
+    The structure mirrors what LLamaSharp.Backend.Cpu NuGet would provide.
+    Without the Backend.Cpu package, LLamaSharp's DllImport searches:
+      1. Same directory as the assembly (the output dir)
+      2. System library paths (LD_LIBRARY_PATH)
+    So we place .so files directly in the output directory.
+  -->
+  <Target Name="CopyCustomNativeLibsToOutput" AfterTargets="Build;Publish">
+    <ItemGroup>
+      <NativeLib Include="runtimes\linux-x64\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(NativeLib)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
