@@ -36,6 +36,23 @@ public sealed class LizardConfig
     public float LlmTemperature { get; set; } = 0.7f;
     public int MaxTokens { get; set; } = 512;
 
+    // Vision (multimodal)
+    public string MmprojPath { get; set; } =
+        Environment.GetEnvironmentVariable("LIZARD_MMPROJ_PATH")
+        ?? "/home/wily/ai/models/mmproj-gemma4-E2B-BF16.gguf";
+
+    public int MtmdGpuLayers { get; set; } =
+        int.TryParse(Environment.GetEnvironmentVariable("LIZARD_MTMD_GPU_LAYERS"), out var mg)
+        ? mg : 0;
+
+    public int MtmdThreads { get; set; } =
+        int.TryParse(Environment.GetEnvironmentVariable("LIZARD_MTMD_THREADS"), out var mt)
+        ? mt : 4;
+
+    public bool VisionEnabled { get; set; } =
+        !bool.TryParse(Environment.GetEnvironmentVariable("LIZARD_VISION_DISABLED"), out var vd)
+        || !vd;
+
     // Wake word detection
     public string WakePhrase { get; set; } =
         Environment.GetEnvironmentVariable("LIZARD_WAKE_PHRASE")

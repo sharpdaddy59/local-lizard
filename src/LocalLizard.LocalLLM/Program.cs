@@ -2,42 +2,55 @@ using LocalLizard.Common;
 using LocalLizard.LocalLLM;
 
 var config = new LizardConfig();
+if (args.Length > 0) config.ModelPath = args[0];
 
-// Allow overriding model path via first CLI arg
-if (args.Length > 0)
-    config.ModelPath = args[0];
+Console.Error.WriteLine($"Loading model: {config.ModelPath}");
+Console.Error.WriteLine($"mmproj: {config.MmprojPath}");
 
-Console.WriteLine($"Loading model: {config.ModelPath}");
+using var engine = new LlmEngine(config);
+engine.LoadModel();
 
-using var llm = new LlmService(config);
-await llm.LoadAsync();
+Console.Error.WriteLine($"Vision: {engine.CanDoVision}");
+Console.Error.WriteLine("--- TEXT RESPONSE ---");
 
-Console.WriteLine("Model loaded. Type a message (or 'quit' to exit):\n");
-
-var chatHistory = new List<(string Role, string Content)>();
-
-while (true)
+// Text-only test
+var response = new System.Text.StringBuilder();
+await foreach (var token in engine.CompleteAsync("What is 2+2?"))
 {
-    Console.Write("You> ");
-    var input = Console.ReadLine();
-    if (string.IsNullOrWhiteSpace(input)) continue;
-    if (input.Equals("quit", StringComparison.OrdinalIgnoreCase)) break;
+    response.Append(token);
+    Console.Out.Write(token);
+    Console.Out.Flush();
+}
+Console.Out.WriteLine();
+Console.Error.WriteLine($"--- TEXT END ({response.Length} chars) ---");
 
-    var response = string.Empty;
-    try
+// Vision test (if available)
+if (engine.CanDoVision)
+{
+    Console.Error.WriteLine("--- VISION TEST ---");
+    var snapPath = args.Length > 1 ? args[1] : "/tmp/vision-test-1777061126.jpg";
+    if (File.Exists(snapPath))
     {
-        response = await llm.CompleteAsync(input, chatHistory: chatHistory, ct: default);
-        Console.WriteLine($"Bot> {response}\n");
-    }
-    catch (Exception ex)
-    {
-        Console.Error.WriteLine($"Error: {ex.Message}");
-        Console.Error.WriteLine(ex.StackTrace);
-        break;
-    }
+        var imageBytes = await File.ReadAllBytesAsync(snapPath);
+        Console.Error.WriteLine($"Image: {snapPath} ({imageBytes.Length} bytes)");
 
-    chatHistory.Add(("user", input));
-    chatHistory.Add(("assistant", response));
+        try
+        {
+            var visionResponse = new System.Text.StringBuilder();
+            await foreach (var token in engine.CompleteAsync("<media> Describe what you see in this image.", imageBuffer: imageBytes))
+            {
+                visionResponse.Append(token);
+                Console.Out.Write(token);
+                Console.Out.Flush();
+            }
+            Console.Out.WriteLine();
+            Console.Error.WriteLine($"--- VISION END ({visionResponse.Length} chars) ---");
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Vision error: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
 }
 
-Console.WriteLine("Goodbye!");
+Console.Error.WriteLine("Done.");

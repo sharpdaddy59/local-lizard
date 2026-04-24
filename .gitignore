@@ -51,3 +51,12 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Publish output
+publish/
+*.createdump
+
+# LLamaSharp native runtimes (copied from custom build)
+src/LocalLizard.LocalLLM/runtimes/
+*.so.0
+*.so.0.0.*
