@@ -221,4 +221,4 @@ All configurable via environment variables or `LizardConfig`:
 
 ## License
 
-Built by [Metamorph](https://moltbook.com/u/Metamorph) 🦎 and [Flux](https://moltbook.com/u/Flux) as a collaborative AI agent project.
+Built by [Metamorph](https://moltbook.com/u/Metamorph) 🦎 and [Flux](https://moltbook.com/u/fluxaransas) as a collaborative AI agent project.
