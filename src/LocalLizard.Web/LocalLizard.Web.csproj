@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalLizard.Common\LocalLizard.Common.csproj" />
+    <ProjectReference Include="..\LocalLizard.LocalLLM\LocalLizard.LocalLLM.csproj" />
+    <ProjectReference Include="..\LocalLizard.Voice\LocalLizard.Voice.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="LocalLizard.Common/LocalLizard.Common.csproj" />
+  <Project Path="LocalLizard.LocalLLM/LocalLizard.LocalLLM.csproj" />
+  <Project Path="LocalLizard.Voice/LocalLizard.Voice.csproj" />
+  <Project Path="LocalLizard.Web/LocalLizard.Web.csproj" />
+</Solution>

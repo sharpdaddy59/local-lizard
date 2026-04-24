@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="../LocalLizard.Common/LocalLizard.Common.csproj" />
+    <ProjectReference Include="../LocalLizard.LocalLLM/LocalLizard.LocalLLM.csproj" />
+    <ProjectReference Include="../LocalLizard.Voice/LocalLizard.Voice.csproj" />
+  </ItemGroup>
+
+</Project>
