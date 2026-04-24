@@ -20,16 +20,16 @@ A fully local voice-enabled AI assistant designed for a **$250 mini PC**. No clo
 
 ```
 ┌──────────────────┐     ┌────────────────┐     ┌──────────────┐
-│  Web UI /         │────▶│  Chat Loop     │────▶│  LlmEngine   │
-│  Telegram /       │     │  Service       │     │ (LLamaSharp) │
-│  Wake Word        │     │                │     └──────────────┘
+│  Web UI /        │────▶│  Chat Loop     │────▶│  LlmEngine   │
+│  Telegram /      │     │  Service       │     │ (LLamaSharp) │
+│  Wake Word       │     │                │     └──────────────┘
 └──────────────────┘     │  ┌──────────┐  │
-                          │  │ Voice    │  │     ┌──────────────┐
-                          │  │ Pipeline │──┼────▶│  Whisper.net │
-                          │  │          │  │     │  (STT)       │
-                          │  │          │──┼────▶│  Piper       │
-                          │  └──────────┘  │     │  (TTS)       │
-                          └────────────────┘     └──────────────┘
+                         │  │ Voice    │  │     ┌──────────────┐
+                         │  │ Pipeline │──┼────▶│  Whisper.net │
+                         │  │          │  │     │  (STT)       │
+                         │  │          │──┼────▶│  Piper       │
+                         │  └──────────┘  │     │  (TTS)       │
+                         └────────────────┘     └──────────────┘
 ```
 
 ### Projects
