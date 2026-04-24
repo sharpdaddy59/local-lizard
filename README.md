@@ -78,6 +78,19 @@ cd src
 dotnet build -c Release
 ```
 
+#### Publish (self-contained, no .NET SDK required to run)
+
+```bash
+# Web UI
+cd src
+dotnet publish LocalLizard.Web -c Release -r linux-x64 --self-contained
+./LocalLizard.Web/bin/Release/net10.0/linux-x64/publish/LocalLizard.Web
+
+# Telegram Bot
+dotnet publish LocalLizard.Telegram -c Release -r linux-x64 --self-contained
+./LocalLizard.Telegram/bin/Release/net10.0/linux-x64/publish/LocalLizard.Telegram
+```
+
 #### Configure
 
 Set environment variables (or edit `locallizard.env`):
