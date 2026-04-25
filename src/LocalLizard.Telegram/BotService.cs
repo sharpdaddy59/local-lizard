@@ -219,12 +219,27 @@ public sealed class BotService : IDisposable
             _llm.LoadModel();
 
         var result = new StringBuilder();
-        await foreach (var token in _llm.CompleteAsync(userMessage, ct))
+        await foreach (var token in _llm.CompleteWithToolsAsync(userMessage, ct: ct))
         {
             result.Append(token);
         }
 
         var reply = result.ToString().Trim();
+
+        // Log raw model output for debugging
+        var hasToolCall = reply.Contains("<|tool_call>", StringComparison.Ordinal);
+        var hasToolResponse = reply.Contains("<|tool_response>", StringComparison.Ordinal);
+        Console.WriteLine($"[LlmEngine] Input: {userMessage.Truncate(80)}");
+        if (hasToolCall || hasToolResponse)
+        {
+            Console.WriteLine($"[LlmEngine] Raw output: {reply.Truncate(500)}");
+            Console.WriteLine($"[LlmEngine]  ├ Has <|tool_call|>: {hasToolCall}");
+            Console.WriteLine($"[LlmEngine]  └ Has <|tool_response|>: {hasToolResponse}");
+        }
+        else
+        {
+            Console.WriteLine($"[LlmEngine] Reply: {reply.Truncate(200)}");
+        }
 
         lock (_convLock)
         {
@@ -295,4 +310,13 @@ public sealed class BotService : IDisposable
     }
 
     public void Dispose() => _cts.Cancel();
+}
+
+/// <summary>
+/// Extension helpers for BotService.
+/// </summary>
+file static class StringExtensions
+{
+    public static string Truncate(this string s, int maxChars)
+        => s.Length <= maxChars ? s : s[..maxChars] + "...";
 }

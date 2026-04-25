@@ -6,7 +6,12 @@ var config = new LizardConfig();
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton(config);
-builder.Services.AddSingleton<LlmEngine>();
+builder.Services.AddSingleton<LlmEngine>(sp =>
+{
+    var engine = new LlmEngine(config);
+    ToolSetup.ConfigureTools(engine, config);
+    return engine;
+});
 builder.Services.AddSingleton<VoicePipeline>();
 builder.Services.AddSingleton<LocalLizard.Web.Services.ChatLoopService>();
 builder.Services.AddSingleton<LocalLizard.Web.Services.WakeWordHostedService>();
@@ -37,7 +42,7 @@ app.MapPost("/api/chat", async (HttpContext ctx, LlmEngine llm, CancellationToke
 
     ctx.Response.ContentType = "text/plain; charset=utf-8";
 
-    await foreach (var token in llm.CompleteAsync(body.Message, ct))
+    await foreach (var token in llm.CompleteWithToolsAsync(body.Message, ct: ct))
     {
         await ctx.Response.WriteAsync(token, ct);
         await ctx.Response.Body.FlushAsync(ct);

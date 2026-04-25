@@ -1,0 +1,10 @@
+[
+  "df -h",
+  "free -h",
+  "uptime",
+  "who",
+  "ps aux --sort=-%mem | head -10",
+  "ls -la /shared/projects/local-lizard/",
+  "journalctl --no-pager -n 50 -u local-lizard",
+  "cat /proc/cpuinfo | grep \"model name\" | head -1"
+]

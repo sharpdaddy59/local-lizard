@@ -129,7 +129,7 @@ public sealed class ChatLoopService : IDisposable
             _llm.LoadModel();
 
         var result = new StringBuilder();
-        await foreach (var token in _llm.CompleteAsync(userMessage, ct))
+        await foreach (var token in _llm.CompleteWithToolsAsync(userMessage, ct: ct))
         {
             result.Append(token);
         }

@@ -12,7 +12,12 @@ var token = Environment.GetEnvironmentVariable("LIZARD_TELEGRAM_BOT_TOKEN")
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddSingleton(config);
-builder.Services.AddSingleton<LlmEngine>();
+builder.Services.AddSingleton<LlmEngine>(sp =>
+{
+    var engine = new LlmEngine(config);
+    ToolSetup.ConfigureTools(engine, config);
+    return engine;
+});
 builder.Services.AddSingleton<VoicePipeline>();
 builder.Services.AddSingleton<ITelegramBotClient>(new TelegramBotClient(token));
 builder.Services.AddSingleton<BotService>();

@@ -1,17 +1,35 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Moq" Version="4.20.72" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../LocalLizard.Common/LocalLizard.Common.csproj" />
-    <ProjectReference Include="../LocalLizard.LocalLLM/LocalLizard.LocalLLM.csproj" />
-    <ProjectReference Include="../LocalLizard.Voice/LocalLizard.Voice.csproj" />
+    <Using Include="Xunit" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\LocalLizard.LocalLLM\LocalLizard.LocalLLM.csproj" />
+    <ProjectReference Include="..\LocalLizard.Common\LocalLizard.Common.csproj" />
+  </ItemGroup>
+
+  <!-- Copy native LLamaSharp libraries for integration tests -->
+  <Target Name="CopyNativeLibs" AfterTargets="Build">
+      <ItemGroup>
+        <NativeLib Include="..\LocalLizard.LocalLLM\runtimes\linux-x64\**\*" />
+      </ItemGroup>
+      <Copy SourceFiles="@(NativeLib)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>
