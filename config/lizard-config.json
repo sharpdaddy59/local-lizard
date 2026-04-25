@@ -1,4 +1,10 @@
 {
   "BraveSearchApiKey": "BSAg26VJT6fTW5s41GdbzuQBD6QRzuz",
-  "TelegramBotToken": "8537503567:AAE-Xkg7KaLXXbNWFjGj70s2EfYpgZKM0os"
+  "TelegramBotToken": "8537503567:AAE-Xkg7KaLXXbNWFjGj70s2EfYpgZKM0os",
+
+  "LlmGpuLayers": 99,
+  "MaxTokens": 256,
+  "LlmTemperature": 0.3,
+
+  "VisionEnabled": false
 }

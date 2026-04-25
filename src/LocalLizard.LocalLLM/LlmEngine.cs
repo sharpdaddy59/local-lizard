@@ -12,7 +12,9 @@ namespace LocalLizard.LocalLLM;
 /// Wraps LLamaSharp model loading and text/vision completion.
 /// Uses manual Gemma 4 chat format (avoiding PromptTemplateTransformer which
 /// crashes with Gemma 4's complex multimodal Jinja template).
-/// Creates a fresh context per completion call to avoid invalidInputBatch errors.
+/// Creates context once at startup and reuses it across calls for performance.
+/// The InteractiveExecutor is created fresh per inference to avoid state bleed
+/// between turns (the executor handles its own state internally).
 ///
 /// When an image buffer is provided, loads the mmproj, queues the image embedding,
 /// and runs InteractiveExecutor in multimodal mode. Otherwise falls back to pure text.
@@ -30,6 +32,7 @@ public sealed class LlmEngine : IDisposable
 
     private LLamaWeights? _model;
     private MtmdWeights? _mtmd;
+    private LLamaContext? _context;
     private readonly LizardConfig _config;
 
     public LlmEngine(LizardConfig config)
@@ -53,6 +56,13 @@ public sealed class LlmEngine : IDisposable
         };
 
         _model = LLamaWeights.LoadFromFile(parameters);
+
+        // Create a persistent context for all inference calls.
+        // Previously this was done per-call to work around invalidInputBatch
+        // errors, but modern LLamaSharp handles context reuse correctly when
+        // the InteractiveExecutor is recreated per inference (the executor
+        // manages its own KV cache state internally).
+        _context = _model.CreateContext(parameters);
 
         // Load mmproj if enabled and the file exists (non-fatal if missing)
         if (_config.VisionEnabled && File.Exists(_config.MmprojPath))
@@ -110,14 +120,8 @@ public sealed class LlmEngine : IDisposable
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_model is null, this);
+        ObjectDisposedException.ThrowIf(_context is null, this);
 
-        var parameters = new ModelParams(_config.ModelPath)
-        {
-            ContextSize = (uint)_config.LlmContextSize,
-            GpuLayerCount = _config.LlmGpuLayers,
-        };
-
-        using var context = _model.CreateContext(parameters);
         var formattedPrompt = BuildPrompt(prompt);
 
         InteractiveExecutor executor;
@@ -125,12 +129,12 @@ public sealed class LlmEngine : IDisposable
         if (imageBuffer is not null && _mtmd is not null)
         {
             // Multimodal mode: create executor with mtmd weights, load the image
-            executor = new InteractiveExecutor(context, _mtmd);
+            executor = new InteractiveExecutor(_context, _mtmd);
             executor.Embeds.Add(_mtmd.LoadMedia(imageBuffer.AsSpan()));
         }
         else
         {
-            executor = new InteractiveExecutor(context);
+            executor = new InteractiveExecutor(_context);
         }
 
         // InteractiveExecutor does not implement IDisposable.
@@ -150,6 +154,7 @@ public sealed class LlmEngine : IDisposable
 
     public void Dispose()
     {
+        _context?.Dispose();
         _mtmd?.Dispose();
         _model?.Dispose();
     }
@@ -336,24 +341,17 @@ public sealed class LlmEngine : IDisposable
         [EnumeratorCancellation] CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_model is null, this);
-
-        var parameters = new ModelParams(_config.ModelPath)
-        {
-            ContextSize = (uint)_config.LlmContextSize,
-            GpuLayerCount = _config.LlmGpuLayers,
-        };
-
-        using var context = _model.CreateContext(parameters);
+        ObjectDisposedException.ThrowIf(_context is null, this);
 
         InteractiveExecutor executor;
         if (imageBuffer is not null && _mtmd is not null)
         {
-            executor = new InteractiveExecutor(context, _mtmd);
+            executor = new InteractiveExecutor(_context, _mtmd);
             executor.Embeds.Add(_mtmd.LoadMedia(imageBuffer.AsSpan()));
         }
         else
         {
-            executor = new InteractiveExecutor(context);
+            executor = new InteractiveExecutor(_context);
         }
 
         var inferenceParams = new InferenceParams
