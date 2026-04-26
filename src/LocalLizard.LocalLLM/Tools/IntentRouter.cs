@@ -35,9 +35,7 @@ public sealed partial class IntentRouter
     /// <summary>
     /// Try to handle a user query without LLM inference.
     /// Returns the response text if matched, null if no intent matched (fall through to LLM).
-    ///
-    /// Unlike the original "match first, return always" approach, this version
-    /// runs the handler and only returns if the handler returns a non-null result.
+    /// Runs the handler and only returns if the handler returns a non-null result.
     /// A handler that returns null causes the next intent to be tried.
     /// </summary>
     public async Task<string?> TryRouteAsync(
@@ -82,7 +80,91 @@ public sealed partial class IntentRouter
             },
         });
 
-        // ── search_web ──
+        // ── weather ──
+        // "weather in {place}", "forecast {place}", "what's the weather in {place}"
+        Register(new Intent
+        {
+            Name = "weather",
+            Matches = m => WeatherPattern().IsMatch(m),
+            Handler = async (m, tools, ct) =>
+            {
+                var match = WeatherPattern().Match(m);
+                var place = match.Groups["place"].Value.Trim();
+                if (string.IsNullOrEmpty(place))
+                {
+                    // No place specified — fall through to LLM
+                    return null;
+                }
+                if (!tools.TryGet("search_web", out var tool))
+                    return null;
+                var result = await RunTool(tool, ("q", $"weather in {place}"), ct);
+                return $"Here's the weather for {place}: {result}";
+            },
+        });
+
+        // ── math ──
+        // "what is {expression}", "calculate {expression}"
+        Register(new Intent
+        {
+            Name = "math",
+            Matches = m => MathPattern().IsMatch(m),
+            Handler = async (m, tools, ct) =>
+            {
+                var match = MathPattern().Match(m);
+                var expr = match.Groups["expr"].Value.Trim();
+                if (string.IsNullOrEmpty(expr))
+                    return null;
+
+                // Simplify expression for bc: replace common tokens
+                expr = expr
+                    .Replace('x', '*')
+                    .Replace('×', '*')
+                    .Replace('÷', '/')
+                    .Replace("plus", "+")
+                    .Replace("minus", "-")
+                    .Replace("times", "*")
+                    .Replace("divided by", "/")
+                    .TrimEnd('?', '.', '!');
+
+                // Sanitize: only allow digits, operators, parens, spaces, decimal
+                if (!IsSafeMathExpression(expr))
+                    return null; // fall through to LLM if expression looks unsafe
+
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "/usr/bin/bc",
+                        Arguments = "",
+                        RedirectStandardInput = true,
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    };
+                    using var proc = new Process { StartInfo = psi };
+                    proc.Start();
+                    await proc.StandardInput.WriteAsync(expr);
+                    proc.StandardInput.Close();
+                    var output = await proc.StandardOutput.ReadToEndAsync(ct);
+                    var result = output.Trim();
+
+                    if (decimal.TryParse(result, System.Globalization.NumberStyles.Any,
+                        System.Globalization.CultureInfo.InvariantCulture, out var dec))
+                    {
+                        return $"{expr} = {dec:G}";
+                    }
+                    return $"{expr} = {result}";
+                }
+                catch
+                {
+                    return null; // fall through to LLM
+                }
+            },
+        });
+
+        // ── web search (broad) ──
+        // "what is {topic}", "what's a {topic}", "how to {topic}", "what does {topic} mean"
+        // Registered AFTER weather and math so they get first crack at "what is X" queries
         Register(new Intent
         {
             Name = "search_web",
@@ -116,7 +198,7 @@ public sealed partial class IntentRouter
             },
         });
 
-        // ── lookup (split into separate patterns for clarity) ──
+        // ── lookup patterns (split into separate intents) ──
 
         // "what do you know about {topic}"
         Register(new Intent
@@ -152,7 +234,7 @@ public sealed partial class IntentRouter
             },
         });
 
-        // "look up [in memory] [the] {topic}"
+        // "look up [in memory] [the] {topic}" (no overlap with search_web — "look up" removed from SearchPattern)
         Register(new Intent
         {
             Name = "lookup_fact",
@@ -204,9 +286,29 @@ public sealed partial class IntentRouter
         });
     }
 
+    // ── Math safety ──
+
+    /// <summary>
+    /// Only allow digits, basic operators, parens, spaces, and decimal point.
+    /// Prevents shell injection through bc.
+    /// </summary>
+    private static bool IsSafeMathExpression(string expr)
+    {
+        if (string.IsNullOrWhiteSpace(expr))
+            return false;
+        foreach (var c in expr)
+        {
+            if (!char.IsDigit(c) && c != '+' && c != '-' && c != '*' && c != '/'
+                && c != '(' && c != ')' && c != ' ' && c != '.' && c != '%')
+                return false;
+        }
+        return true;
+    }
+
+    // ── Tool execution helpers ──
+
     /// <summary>
     /// Build a JSON arguments dictionary from key-value pairs and run the tool.
-    /// Replaces the old colon-split parsing with structured JSON construction.
     /// </summary>
     private static async Task<string> RunTool(ITool tool, (string key, string value) arg, CancellationToken ct)
     {
@@ -241,7 +343,30 @@ public sealed partial class IntentRouter
     [GeneratedRegex(@"^(what(('s| is) the| time is it)|current time|time now)\s*\??$", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex TimePattern();
 
-    [GeneratedRegex(@"(?:search (?:for |)(?<q>.+))|(?:look up (?<q>.+))|(?:find (?<q>.+))|(?:google (?<q>.+))", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    /// <summary>
+    /// "weather in {place}", "forecast {place}", "what's the weather in {place}"
+    /// Captures the place name. If no place specified, handler returns null (falls through).
+    /// </summary>
+    [GeneratedRegex(@"(?:weather|forecast)\s+(?:in |for |at |)(?<place>.+)|what(?:'s| is) the weather (?:in |for |at |)(?<place>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex WeatherPattern();
+
+    /// <summary>
+    /// "what is {expression}", "calculate {expression}"
+    /// Must NOT match possessive patterns ("what is my X") — those go to lookup_fact.
+    /// The 'what is' branch requires the expression to start with a digit or opening paren.
+    /// </summary>
+    [GeneratedRegex(@"(?:what(?:'s| is)\s+(?=\d|\()(?<expr>.+))|(?:calculate\s+(?<expr2>.+))|(?:calc\s+(?<expr3>.+))", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex MathPattern();
+
+    /// <summary>
+    /// Broad web search queries that don't fit weather, math, or memory lookup.
+    /// - "search for {q}", "find {q}", "google {q}"
+    /// - "what's a {q}" (general knowledge)
+    /// - "how to {q}" (procedural)
+    /// - "what does {q} mean"
+    /// NOTE: "look up X" is NOT here — those are memory operations.
+    /// </summary>
+    [GeneratedRegex(@"(?:search (?:for |)(?<q>.+))|(?:find (?<q>.+))|(?:google (?<q>.+))|what(?:'s| is) a (?:n |)(?<q>.+)|how (?:do |does |can |would |to |)(?<q>.+)|what does (?<q>.+) mean", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex SearchPattern();
 
     [GeneratedRegex(@"remember (?:that |)(?<fact>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
@@ -267,13 +392,11 @@ public sealed partial class IntentRouter
 
     /// <summary>
     /// "what is/are/was my/your {topic}" (possessive only).
-    /// Does NOT match bare "what is X" — "what is 7 x 23" falls through to LLM.
+    /// Does NOT match bare "what is X" — those go to math (if numeric) or LLM.
     /// </summary>
     [GeneratedRegex(@"what (?:is|are|was) (?:my |your )(?<topic>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex LookupPossessivePattern();
 
     [GeneratedRegex(@"run (?:shell |)(?:command |)(?<cmd>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ShellPattern();
-
-
 }
