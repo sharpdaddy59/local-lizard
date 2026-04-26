@@ -116,17 +116,68 @@ public sealed partial class IntentRouter
             },
         });
 
-        // ── lookup ──
+        // ── lookup (split into separate patterns for clarity) ──
+
+        // "what do you know about {topic}"
         Register(new Intent
         {
             Name = "lookup_fact",
-            Matches = m => LookupPattern().IsMatch(m),
+            Matches = m => LookupGeneralPattern().IsMatch(m),
             Handler = async (m, tools, ct) =>
             {
-                var match = LookupPattern().Match(m);
+                var match = LookupGeneralPattern().Match(m);
                 var topic = match.Groups["topic"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
                 if (string.IsNullOrEmpty(topic))
-                    topic = match.Groups["topic2"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
+                    return null;
+                if (!tools.TryGet("lookup_fact", out var tool))
+                    return null;
+                return await RunTool(tool, ("query", topic), ct);
+            },
+        });
+
+        // "tell me about {topic}"
+        Register(new Intent
+        {
+            Name = "lookup_fact",
+            Matches = m => LookupTellPattern().IsMatch(m),
+            Handler = async (m, tools, ct) =>
+            {
+                var match = LookupTellPattern().Match(m);
+                var topic = match.Groups["topic"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
+                if (string.IsNullOrEmpty(topic))
+                    return null;
+                if (!tools.TryGet("lookup_fact", out var tool))
+                    return null;
+                return await RunTool(tool, ("query", topic), ct);
+            },
+        });
+
+        // "look up [in memory] [the] {topic}"
+        Register(new Intent
+        {
+            Name = "lookup_fact",
+            Matches = m => LookupMemoryPattern().IsMatch(m),
+            Handler = async (m, tools, ct) =>
+            {
+                var match = LookupMemoryPattern().Match(m);
+                var topic = match.Groups["topic"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
+                if (string.IsNullOrEmpty(topic))
+                    return null;
+                if (!tools.TryGet("lookup_fact", out var tool))
+                    return null;
+                return await RunTool(tool, ("query", topic), ct);
+            },
+        });
+
+        // "what is/are/was my/your {topic}" (possessive only — no bare "what is X")
+        Register(new Intent
+        {
+            Name = "lookup_fact",
+            Matches = m => LookupPossessivePattern().IsMatch(m),
+            Handler = async (m, tools, ct) =>
+            {
+                var match = LookupPossessivePattern().Match(m);
+                var topic = match.Groups["topic"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
                 if (string.IsNullOrEmpty(topic))
                     return null;
                 if (!tools.TryGet("lookup_fact", out var tool))
@@ -197,11 +248,29 @@ public sealed partial class IntentRouter
     private static partial Regex RememberPattern();
 
     /// <summary>
-    /// Matches memory-related lookup phrases. Only matches "what is my/your" (possessives),
-    /// not "what is the" or bare "what is X". "what is 7 x 23" no longer triggers memory lookup.
+    /// "what do you know about {topic}"
     /// </summary>
-    [GeneratedRegex(@"(?:what do you know about|tell me about|look up (?:in memory |)(?:the )?)(?<topic>.+)|what (?:is|are|was) (?:my |your )(?<topic2>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
-    private static partial Regex LookupPattern();
+    [GeneratedRegex(@"what do you know about (?<topic>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex LookupGeneralPattern();
+
+    /// <summary>
+    /// "tell me about {topic}"
+    /// </summary>
+    [GeneratedRegex(@"tell me about (?<topic>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex LookupTellPattern();
+
+    /// <summary>
+    /// "look up [in memory] [the] {topic}"
+    /// </summary>
+    [GeneratedRegex(@"look up (?:in memory |)(?:the |)(?<topic>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex LookupMemoryPattern();
+
+    /// <summary>
+    /// "what is/are/was my/your {topic}" (possessive only).
+    /// Does NOT match bare "what is X" — "what is 7 x 23" falls through to LLM.
+    /// </summary>
+    [GeneratedRegex(@"what (?:is|are|was) (?:my |your )(?<topic>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex LookupPossessivePattern();
 
     [GeneratedRegex(@"run (?:shell |)(?:command |)(?<cmd>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ShellPattern();
