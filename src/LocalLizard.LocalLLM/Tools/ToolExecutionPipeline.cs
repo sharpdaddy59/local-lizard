@@ -8,6 +8,9 @@ public sealed class ToolExecutionPipeline
 {
     private readonly ToolRegistry _registry;
 
+    /// <summary>The underlying tool registry.</summary>
+    public ToolRegistry Tools => _registry;
+
     public ToolExecutionPipeline(ToolRegistry registry)
     {
         _registry = registry;

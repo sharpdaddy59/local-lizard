@@ -36,6 +36,9 @@ public sealed class LlmEngine : IDisposable
     private LLama.Sampling.ISamplingPipeline? _toolGrammarPipeline;      // Lazy grammar (triggered by <|tool_call|>)
     private LLama.Sampling.ISamplingPipeline? _postToolGrammarPipeline; // Constrains post-tool output
 
+    // Deterministic intent router
+    private readonly IntentRouter _intentRouter = new();
+
     private LLamaWeights? _model;
     private MtmdWeights? _mtmd;
     private LLamaContext? _context;
@@ -285,6 +288,17 @@ public sealed class LlmEngine : IDisposable
             await foreach (var token in CompleteAsync(userMessage, imageBuffer, ct))
                 yield return token;
             yield break;
+        }
+
+        // Attempt deterministic intent routing first (no LLM inference)
+        if (_config.IntentRouterEnabled && _toolPipeline is not null)
+        {
+            var routerResult = await _intentRouter.TryRouteAsync(userMessage, _toolPipeline.Tools, ct);
+            if (routerResult is not null)
+            {
+                yield return routerResult;
+                yield break;
+            }
         }
 
         // Build the full conversation accumulator.

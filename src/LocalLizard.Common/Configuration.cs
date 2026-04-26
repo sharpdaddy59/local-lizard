@@ -74,6 +74,13 @@ public sealed class LizardConfig
     /// </summary>
     public bool ToolGrammarEnabled { get; set; } = true;
 
+    /// <summary>
+    /// Enable deterministic intent router. When true, common queries (time,
+    /// search, remember, lookup) are handled by pattern matching without LLM
+    /// inference. Falls through to LLM when no pattern matches.
+    /// </summary>
+    public bool IntentRouterEnabled { get; set; } = true;
+
     public LizardConfig()
     {
         // Load default values, then apply env vars, then apply JSON overrides
@@ -120,6 +127,7 @@ public sealed class LizardConfig
         SetFromEnv("LIZARD_TOOLS_DISABLED", v => ToolsEnabled = !bool.Parse(v));
         SetFromEnv("LIZARD_PROMPT_FORMAT", v => PromptFormat = v);
         SetFromEnv("LIZARD_TOOL_GRAMMAR", v => ToolGrammarEnabled = bool.Parse(v));
+        SetFromEnv("LIZARD_INTENT_ROUTER", v => IntentRouterEnabled = bool.Parse(v));
     }
 
     private void ApplyJsonConfig()
@@ -168,6 +176,7 @@ public sealed class LizardConfig
                     case "ToolsEnabled": ToolsEnabled = kvp.Value.GetBoolean(); break;
                     case "PromptFormat": PromptFormat = kvp.Value.GetString() ?? PromptFormat; break;
                     case "ToolGrammarEnabled": ToolGrammarEnabled = kvp.Value.GetBoolean(); break;
+                    case "IntentRouterEnabled": IntentRouterEnabled = kvp.Value.GetBoolean(); break;
                 }
             }
         }

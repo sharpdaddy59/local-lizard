@@ -4,6 +4,7 @@
   "ModelPath": "/home/wily/ai/models/qwen-2.5-3b-instruct-q4_k_m.gguf",
   "PromptFormat": "chatml",
   "ToolGrammarEnabled": true,
+  "IntentRouterEnabled": true,
   "LlmGpuLayers": 0,
   "MaxTokens": 256,
   "LlmTemperature": 0.3,
