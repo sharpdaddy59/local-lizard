@@ -143,7 +143,7 @@ public sealed partial class IntentRouter
                     };
                     using var proc = new Process { StartInfo = psi };
                     proc.Start();
-                    await proc.StandardInput.WriteAsync(expr);
+                    await proc.StandardInput.WriteLineAsync(expr);
                     proc.StandardInput.Close();
                     var output = await proc.StandardOutput.ReadToEndAsync(ct);
                     var result = output.Trim();
