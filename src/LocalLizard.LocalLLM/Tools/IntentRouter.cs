@@ -7,7 +7,10 @@ namespace LocalLizard.LocalLLM.Tools;
 /// <summary>
 /// Deterministic intent router for common queries. Uses regex/pattern matching
 /// to handle common requests without LLM inference.
-/// Falls through to the LLM if no pattern matches.
+///
+/// Each intent registers a pattern and a handler. Handlers that return null
+/// cause the router to try the next intent. If all intents return null,
+/// the query falls through to the LLM.
 /// </summary>
 public sealed partial class IntentRouter
 {
@@ -32,6 +35,10 @@ public sealed partial class IntentRouter
     /// <summary>
     /// Try to handle a user query without LLM inference.
     /// Returns the response text if matched, null if no intent matched (fall through to LLM).
+    ///
+    /// Unlike the original "match first, return always" approach, this version
+    /// runs the handler and only returns if the handler returns a non-null result.
+    /// A handler that returns null causes the next intent to be tried.
     /// </summary>
     public async Task<string?> TryRouteAsync(
         string userMessage,
@@ -43,18 +50,18 @@ public sealed partial class IntentRouter
 
         foreach (var intent in _intents)
         {
-            if (intent.Matches(lower))
-            {
-                var sw = Stopwatch.StartNew();
-                var result = await intent.Handler(lower, toolRegistry, ct);
-                sw.Stop();
-                if (result is not null)
-                {
-                    Debug.WriteLine($"[Router] {intent.Name} matched in {sw.Elapsed.TotalMilliseconds:F0}ms");
-                    return result;
-                }
-                // Handler returned null — skip to next intent
-            }
+            if (!intent.Matches(lower))
+                continue;
+
+            var sw = Stopwatch.StartNew();
+            var result = await intent.Handler(lower, toolRegistry, ct);
+            sw.Stop();
+
+            if (result is null)
+                continue; // Handler declined — try next intent
+
+            Debug.WriteLine($"[Router] {intent.Name} matched in {sw.Elapsed.TotalMilliseconds:F0}ms");
+            return result;
         }
 
         return null;
@@ -88,7 +95,7 @@ public sealed partial class IntentRouter
                     return null;
                 if (!tools.TryGet("search_web", out var tool))
                     return null;
-                return await formatToolResult(tool, $"q:{query}", ct);
+                return await RunTool(tool, ("q", query), ct);
             },
         });
 
@@ -105,7 +112,7 @@ public sealed partial class IntentRouter
                     return null;
                 if (!tools.TryGet("remember_fact", out var tool))
                     return null;
-                return await formatToolResult(tool, $"memory:{fact}", ct);
+                return await RunTool(tool, ("memory", fact), ct);
             },
         });
 
@@ -119,10 +126,12 @@ public sealed partial class IntentRouter
                 var match = LookupPattern().Match(m);
                 var topic = match.Groups["topic"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
                 if (string.IsNullOrEmpty(topic))
+                    topic = match.Groups["topic2"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
+                if (string.IsNullOrEmpty(topic))
                     return null;
                 if (!tools.TryGet("lookup_fact", out var tool))
                     return null;
-                return await formatToolResult(tool, $"query:{topic}", ct);
+                return await RunTool(tool, ("query", topic), ct);
             },
         });
 
@@ -139,27 +148,36 @@ public sealed partial class IntentRouter
                     return null;
                 if (!tools.TryGet("run_shell", out var tool))
                     return null;
-                return await formatToolResult(tool, $"command:{cmd}", ct);
+                return await RunTool(tool, ("command", cmd), ct);
             },
         });
     }
 
     /// <summary>
-    /// Build a JSON arguments object from a simple key:value string and execute the tool.
+    /// Build a JSON arguments dictionary from key-value pairs and run the tool.
+    /// Replaces the old colon-split parsing with structured JSON construction.
     /// </summary>
-    private static async Task<string> formatToolResult(ITool tool, string keyValue, CancellationToken ct)
+    private static async Task<string> RunTool(ITool tool, (string key, string value) arg, CancellationToken ct)
     {
-        var colonIdx = keyValue.IndexOf(':');
-        if (colonIdx > 0)
+        var dict = new Dictionary<string, string> { [arg.key] = arg.value };
+        var json = JsonSerializer.Serialize(dict);
+        using var doc = JsonDocument.Parse(json);
+        return await tool.RunAsync(doc.RootElement, ct);
+    }
+
+    /// <summary>
+    /// Overload with two arguments for tools that need multiple parameters.
+    /// </summary>
+    private static async Task<string> RunTool(ITool tool, (string key, string value) arg1, (string key, string value) arg2, CancellationToken ct)
+    {
+        var dict = new Dictionary<string, string>
         {
-            var key = keyValue[..colonIdx].Trim();
-            var value = keyValue[(colonIdx + 1)..].Trim();
-            var json = JsonSerializer.Serialize(new Dictionary<string, string> { [key] = value });
-            using var doc = JsonDocument.Parse(json);
-            return await tool.RunAsync(doc.RootElement, ct);
-        }
-        using var emptyDoc = JsonDocument.Parse("{}");
-        return await tool.RunAsync(emptyDoc.RootElement, ct);
+            [arg1.key] = arg1.value,
+            [arg2.key] = arg2.value,
+        };
+        var json = JsonSerializer.Serialize(dict);
+        using var doc = JsonDocument.Parse(json);
+        return await tool.RunAsync(doc.RootElement, ct);
     }
 
     private void Register(Intent intent)
@@ -178,9 +196,15 @@ public sealed partial class IntentRouter
     [GeneratedRegex(@"remember (?:that |)(?<fact>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex RememberPattern();
 
-    [GeneratedRegex(@"(?:what do you know about|tell me about|look up (?:in memory |)(?:the )?|what (?:is|are|was) (?:my |the |)(?<topic>.+))", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    /// <summary>
+    /// Matches memory-related lookup phrases. Only matches "what is my/your" (possessives),
+    /// not "what is the" or bare "what is X". "what is 7 x 23" no longer triggers memory lookup.
+    /// </summary>
+    [GeneratedRegex(@"(?:what do you know about|tell me about|look up (?:in memory |)(?:the )?)(?<topic>.+)|what (?:is|are|was) (?:my |your )(?<topic2>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex LookupPattern();
 
     [GeneratedRegex(@"run (?:shell |)(?:command |)(?<cmd>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ShellPattern();
+
+
 }
