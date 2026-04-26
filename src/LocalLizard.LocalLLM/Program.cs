@@ -6,7 +6,7 @@ var config = new LizardConfig();
 if (args.Length > 0) config.ModelPath = args[0];
 
 Console.Error.WriteLine($"Loading model: {config.ModelPath}");
-Console.Error.WriteLine($"Format: {config.PromptFormat}");
+// LLamaTemplate handles prompt format from GGUF metadata (removed PromptFormat)
 
 using var engine = new LlmEngine(config);
 var loadSw = Stopwatch.StartNew();

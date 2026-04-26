@@ -26,20 +26,12 @@ public sealed class RunShellTool : ITool
         _allowlistPath = allowlistPath;
     }
 
-    public async Task<string> RunAsync(string args, CancellationToken ct)
+    public async Task<string> RunAsync(JsonElement arguments, CancellationToken ct)
     {
-        // Parse command from args
+        // Parse command from arguments JSON
         string? command = null;
-        var lines = args.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
-        {
-            var trimmed = line.Trim();
-            if (trimmed.StartsWith("command=", StringComparison.OrdinalIgnoreCase))
-            {
-                command = trimmed[8..].Trim();
-                break;
-            }
-        }
+        if (arguments.TryGetProperty("command", out var cmdEl))
+            command = cmdEl.GetString();
 
         if (string.IsNullOrWhiteSpace(command))
             return "Error: run_shell requires a command argument. Example: command=df -h";

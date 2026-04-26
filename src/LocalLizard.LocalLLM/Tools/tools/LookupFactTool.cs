@@ -1,8 +1,11 @@
+using System.Text.Json;
+
 namespace LocalLizard.LocalLLM.Tools.Tools;
 
 /// <summary>
-/// Looks up a stored fact by key from the memory JSON file.
-/// Pairs with RememberFactTool.
+/// Looks up stored facts by natural language query.
+/// Single argument: query (what to look up).
+/// Searches across all stored fact keys and values for matches.
 /// </summary>
 public sealed class LookupFactTool : ITool
 {
@@ -11,31 +14,28 @@ public sealed class LookupFactTool : ITool
     public string Name => "lookup_fact";
 
     public string Description =>
-        "Look up a previously stored fact. Argument: key (the fact name to retrieve). " +
-        "Example: key=user_name";
+        "Look up a fact from memory. Single argument: query (what to look for, in natural language). " +
+        "Example: query=What is my name";
 
     public LookupFactTool(RememberFactTool memory)
     {
         _memory = memory;
     }
 
-    public async Task<string> RunAsync(string args, CancellationToken ct)
+    public async Task<string> RunAsync(JsonElement arguments, CancellationToken ct)
     {
-        // Parse the "key" from args
-        // The args parameter is the raw block text. We parse it here for simplicity.
-        var lines = args.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
+        // Extract the single "query" argument
+        if (arguments.TryGetProperty("query", out var queryEl))
         {
-            var trimmed = line.Trim();
-            if (trimmed.StartsWith("key=", StringComparison.OrdinalIgnoreCase))
+            var query = queryEl.GetString();
+            if (!string.IsNullOrWhiteSpace(query))
             {
-                var key = trimmed[4..].Trim();
-                var value = await _memory.LookupAsync(key, ct);
-                return value is not null
-                    ? $"{key}: {value}"
-                    : $"No fact found for '{key}'.";
+                var result = await _memory.LookupAsync(query, ct);
+                return result is not null
+                    ? result
+                    : $"I don't remember anything about '{query}'.";
             }
         }
-        return "Error: lookup_fact requires a key argument. Usage: key=fact_name";
+        return "Error: lookup_fact requires a query argument. Example: query=What is my name";
     }
 }

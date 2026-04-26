@@ -1,19 +1,21 @@
+using System.Text.Json;
+
 namespace LocalLizard.LocalLLM.Tools;
 
 /// <summary>
-/// A callable tool that the LLM can invoke via [TOOL_CALL] syntax.
+/// A callable tool that the LLM can invoke via tool call syntax.
 /// </summary>
 public interface ITool
 {
-    /// <summary>Unique name used in [TOOL_CALL] blocks.</summary>
+    /// <summary>Unique name used in tool call blocks.</summary>
     string Name { get; }
 
     /// <summary>Short description shown in system prompt.</summary>
     string Description { get; }
 
     /// <summary>
-    /// Execute the tool with the given arguments (raw string after name=value parsing).
-    /// Returns a string to inject back as [TOOL_RESULT].
+    /// Execute the tool with the given arguments as a JSON element.
+    /// Returns a string to inject back as the tool result.
     /// </summary>
-    Task<string> RunAsync(string args, CancellationToken ct);
+    Task<string> RunAsync(JsonElement arguments, CancellationToken ct);
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LocalLizard.LocalLLM.Tools.Tools;
 
 namespace LocalLizard.Tests;
@@ -8,7 +9,8 @@ public class GetTimeToolTests
     public async Task RunAsync_ReturnsFormattedTime()
     {
         var tool = new GetTimeTool();
-        var result = await tool.RunAsync("", CancellationToken.None);
+        var emptyArgs = JsonDocument.Parse("{}").RootElement;
+        var result = await tool.RunAsync(emptyArgs, CancellationToken.None);
 
         // Should look like "Friday, April 24, 2026 at 10:03 PM"
         Assert.Contains(",", result);

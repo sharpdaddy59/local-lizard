@@ -59,28 +59,6 @@ public sealed class LizardConfig
     // ---- Features ----
     public bool ToolsEnabled { get; set; } = true;
 
-    /// <summary>
-    /// Prompt format: "gemma4" (default) or "chatml" (Qwen 2.5, Phi, Llama 3).
-    /// Gemma 4 uses &lt;|turn&gt;user/&lt;|turn&gt;model format.
-    /// ChatML uses &lt;|im_start|&gt;user/&lt;|im_start|&gt;assistant format.
-    /// </summary>
-    public string PromptFormat { get; set; } = "gemma4";
-
-    /// <summary>
-    /// Enable GBNF grammar constraints for tool call generation.
-    /// When true, lazy grammar sampling constrains the model to produce
-    /// valid &lt;|tool_call|&gt;call:name{...}&lt;tool_call|&gt; format.
-    /// Set to false to revert to unconstrained generation.
-    /// </summary>
-    public bool ToolGrammarEnabled { get; set; } = true;
-
-    /// <summary>
-    /// Enable deterministic intent router. When true, common queries (time,
-    /// search, remember, lookup) are handled by pattern matching without LLM
-    /// inference. Falls through to LLM when no pattern matches.
-    /// </summary>
-    public bool IntentRouterEnabled { get; set; } = true;
-
     public LizardConfig()
     {
         // Load default values, then apply env vars, then apply JSON overrides
@@ -125,9 +103,6 @@ public sealed class LizardConfig
         SetFromEnv("LIZARD_BRAVE_SEARCH_KEY", v => BraveSearchApiKey = v);
         SetFromEnv("LIZARD_TELEGRAM_BOT_TOKEN", v => TelegramBotToken = v);
         SetFromEnv("LIZARD_TOOLS_DISABLED", v => ToolsEnabled = !bool.Parse(v));
-        SetFromEnv("LIZARD_PROMPT_FORMAT", v => PromptFormat = v);
-        SetFromEnv("LIZARD_TOOL_GRAMMAR", v => ToolGrammarEnabled = bool.Parse(v));
-        SetFromEnv("LIZARD_INTENT_ROUTER", v => IntentRouterEnabled = bool.Parse(v));
     }
 
     private void ApplyJsonConfig()
@@ -174,9 +149,6 @@ public sealed class LizardConfig
                     case "BraveSearchApiKey": BraveSearchApiKey = kvp.Value.GetString() ?? BraveSearchApiKey; break;
                     case "TelegramBotToken": TelegramBotToken = kvp.Value.GetString() ?? TelegramBotToken; break;
                     case "ToolsEnabled": ToolsEnabled = kvp.Value.GetBoolean(); break;
-                    case "PromptFormat": PromptFormat = kvp.Value.GetString() ?? PromptFormat; break;
-                    case "ToolGrammarEnabled": ToolGrammarEnabled = kvp.Value.GetBoolean(); break;
-                    case "IntentRouterEnabled": IntentRouterEnabled = kvp.Value.GetBoolean(); break;
                 }
             }
         }

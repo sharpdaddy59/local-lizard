@@ -1,12 +1,9 @@
 {
   "BraveSearchApiKey": "BSAg26VJT6fTW5s41GdbzuQBD6QRzuz",
   "TelegramBotToken": "8537503567:AAE-Xkg7KaLXXbNWFjGj70s2EfYpgZKM0os",
-  "ModelPath": "/home/wily/ai/models/qwen-2.5-3b-instruct-q4_k_m.gguf",
-  "PromptFormat": "chatml",
-  "ToolGrammarEnabled": true,
-  "IntentRouterEnabled": true,
+  "ModelPath": "/home/wily/ai/models/qwen3-1.7b-q4_k_m.gguf",
   "LlmGpuLayers": 0,
-  "MaxTokens": 256,
+  "MaxTokens": 384,
   "LlmTemperature": 0.3,
   "VisionEnabled": false
 }

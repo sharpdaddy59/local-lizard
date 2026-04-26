@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace LocalLizard.LocalLLM.Tools;
 
 /// <summary>
@@ -31,32 +33,24 @@ public sealed class ToolExecutionPipeline
 
         var results = new List<ToolResult>();
 
-        foreach (var call in calls)
+        foreach (var (name, arguments) in calls)
         {
-            if (!_registry.TryGet(call.Name, out var tool))
+            if (!_registry.TryGet(name, out var tool))
             {
-                results.Add(new ToolResult(call.Name, "error", $"Unknown tool: {call.Name}"));
+                results.Add(new ToolResult(name, "error", $"Unknown tool: {name}"));
                 continue;
             }
 
-            // Build the raw args string from the parsed key=value pairs
-            var argsBuilder = new System.Text.StringBuilder();
-            foreach (var kv in call.Args)
-            {
-                argsBuilder.AppendLine($"{kv.Key}={kv.Value}");
-            }
-            var rawArgs = argsBuilder.ToString().TrimEnd();
-
             try
             {
-                var output = await tool.RunAsync(rawArgs, ct);
+                var output = await tool.RunAsync(arguments, ct);
                 var truncated = System.Text.Encoding.UTF8.GetByteCount(output) > 2000;
                 var displayOutput = ToolCallParser.TruncateResult(output);
-                results.Add(new ToolResult(call.Name, "ok", displayOutput, truncated));
+                results.Add(new ToolResult(name, "ok", displayOutput, truncated));
             }
             catch (Exception ex)
             {
-                results.Add(new ToolResult(call.Name, "error", ex.Message));
+                results.Add(new ToolResult(name, "error", ex.Message));
             }
         }
 

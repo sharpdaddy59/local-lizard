@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace LocalLizard.LocalLLM.Tools;
@@ -104,7 +105,7 @@ public sealed partial class IntentRouter
                     return null;
                 if (!tools.TryGet("remember_fact", out var tool))
                     return null;
-                return await formatToolResult(tool, $"fact:{fact}", ct);
+                return await formatToolResult(tool, $"memory:{fact}", ct);
             },
         });
 
@@ -116,12 +117,12 @@ public sealed partial class IntentRouter
             Handler = async (m, tools, ct) =>
             {
                 var match = LookupPattern().Match(m);
-                var topic = match.Groups["topic"].Value.Trim();
+                var topic = match.Groups["topic"].Value.Trim().TrimEnd('?', '.', '!', ':', ';', ',');
                 if (string.IsNullOrEmpty(topic))
                     return null;
                 if (!tools.TryGet("lookup_fact", out var tool))
                     return null;
-                return await formatToolResult(tool, $"topic:{topic}", ct);
+                return await formatToolResult(tool, $"query:{topic}", ct);
             },
         });
 
@@ -143,10 +144,22 @@ public sealed partial class IntentRouter
         });
     }
 
-    private static async Task<string> formatToolResult(ITool tool, string args, CancellationToken ct)
+    /// <summary>
+    /// Build a JSON arguments object from a simple key:value string and execute the tool.
+    /// </summary>
+    private static async Task<string> formatToolResult(ITool tool, string keyValue, CancellationToken ct)
     {
-        var result = await tool.RunAsync(args, ct);
-        return result;
+        var colonIdx = keyValue.IndexOf(':');
+        if (colonIdx > 0)
+        {
+            var key = keyValue[..colonIdx].Trim();
+            var value = keyValue[(colonIdx + 1)..].Trim();
+            var json = JsonSerializer.Serialize(new Dictionary<string, string> { [key] = value });
+            using var doc = JsonDocument.Parse(json);
+            return await tool.RunAsync(doc.RootElement, ct);
+        }
+        using var emptyDoc = JsonDocument.Parse("{}");
+        return await tool.RunAsync(emptyDoc.RootElement, ct);
     }
 
     private void Register(Intent intent)
@@ -165,7 +178,7 @@ public sealed partial class IntentRouter
     [GeneratedRegex(@"remember (?:that |)(?<fact>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex RememberPattern();
 
-    [GeneratedRegex(@"(?:what do you know about|tell me about|look up (?:in memory |)(?:the )?)(?<topic>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    [GeneratedRegex(@"(?:what do you know about|tell me about|look up (?:in memory |)(?:the )?|what (?:is|are|was) (?:my |the |)(?<topic>.+))", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex LookupPattern();
 
     [GeneratedRegex(@"run (?:shell |)(?:command |)(?<cmd>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]

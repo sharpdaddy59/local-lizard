@@ -72,7 +72,21 @@ public class ToolRegistryTests
         Assert.Contains("Returns current date and time", prompt);
         Assert.Contains("search_web", prompt);
         Assert.Contains("Search the internet", prompt);
-        Assert.Contains("<|tool_call>", prompt);
+        Assert.Contains("<tool_call>", prompt);
+    }
+
+    [Fact]
+    public void ToSystemPrompt_UsesJsonSchemaFormat()
+    {
+        var registry = new ToolRegistry(new[] { MakeTool("test", "A test tool") });
+        var prompt = registry.ToSystemPrompt();
+
+        // Should contain JSON Schema structure
+        // JsonSerializer outputs compact JSON like {"type":"function",...}
+        Assert.Contains("\"type\":\"function\"", prompt);
+        Assert.Contains("\"name\":\"test\"", prompt);
+        Assert.Contains("\"parameters\"", prompt);
+        Assert.Contains("\"type\":\"object\"", prompt);
     }
 
     [Fact]
@@ -81,17 +95,17 @@ public class ToolRegistryTests
         var registry = new ToolRegistry(new[] { MakeTool("test", "A test tool") });
         var prompt = registry.ToSystemPrompt();
 
-        Assert.Contains("call:function_name", prompt);
-        Assert.Contains("call:get_time", prompt);
-        Assert.Contains("<|tool_call>", prompt);
+        Assert.Contains("get_time", prompt);
+        Assert.Contains("<tool_call>", prompt);
     }
 
     [Fact]
-    public void EmptyRegistry_ProducesEmptyPrompt()
+    public void EmptyRegistry_ProducesMinimalPrompt()
     {
         var registry = new ToolRegistry(Array.Empty<ITool>());
         Assert.Empty(registry.ToolNames);
         var prompt = registry.ToSystemPrompt();
-        Assert.DoesNotContain("- ", prompt); // no tool list entries
+        // Should still have the base description
+        Assert.Contains("functions", prompt);
     }
 }

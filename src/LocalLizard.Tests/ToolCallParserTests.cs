@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LocalLizard.LocalLLM.Tools;
 
 namespace LocalLizard.Tests;
@@ -17,40 +18,42 @@ public class ToolCallParserTests
     public void Parse_SingleToolCall_NoArgs()
     {
         var output = """
-            I'll check that for you.<|tool_call>call:get_time{}<tool_call|>
+            I'll check that for you.<tool_call>{"name": "get_time", "arguments": {}}<tool_call>
             """;
 
         var calls = ToolCallParser.Parse(output);
         Assert.Single(calls);
         Assert.Equal("get_time", calls[0].Name);
-        Assert.Empty(calls[0].Args);
+        // arguments should be an empty JSON object
+        Assert.Equal(0, calls[0].Arguments.EnumerateObject().Count());
     }
 
     [Fact]
     public void Parse_SingleToolCall_WithStringArg()
     {
         var output = """
-            <|tool_call>call:search_web{query:<|"|>weather in Dallas<|"|>}<tool_call|>
+            <tool_call>{"name": "search_web", "arguments": {"q": "weather in Dallas"}}<tool_call>
             """;
 
         var calls = ToolCallParser.Parse(output);
         Assert.Single(calls);
         Assert.Equal("search_web", calls[0].Name);
-        Assert.Equal("weather in Dallas", calls[0].Args["query"]);
+        Assert.True(calls[0].Arguments.TryGetProperty("q", out var q));
+        Assert.Equal("weather in Dallas", q.GetString());
     }
 
     [Fact]
     public void Parse_MultipleToolCalls()
     {
         var output = """
-            <|tool_call>call:get_time{}<tool_call|><|tool_call>call:search_web{query:<|"|>weather<|"|>}<tool_call|>
+            <tool_call>{"name": "get_time", "arguments": {}}<tool_call><tool_call>{"name": "search_web", "arguments": {"q": "weather"}}<tool_call>
             """;
 
         var calls = ToolCallParser.Parse(output);
         Assert.Equal(2, calls.Count);
         Assert.Equal("get_time", calls[0].Name);
         Assert.Equal("search_web", calls[1].Name);
-        Assert.Equal("weather", calls[1].Args["query"]);
+        Assert.Equal("weather", calls[1].Arguments.GetProperty("q").GetString());
     }
 
     [Fact]
@@ -58,39 +61,27 @@ public class ToolCallParserTests
     {
         var output = """
             Let me look that up for you.
-            <|tool_call>call:search_web{query:<|"|>current weather Dallas<|"|>}<tool_call|>
+            <tool_call>{"name": "search_web", "arguments": {"q": "current weather Dallas"}}<tool_call>
             """;
 
         var calls = ToolCallParser.Parse(output);
         Assert.Single(calls);
         Assert.Equal("search_web", calls[0].Name);
-        Assert.Equal("current weather Dallas", calls[0].Args["query"]);
+        Assert.Equal("current weather Dallas", calls[0].Arguments.GetProperty("q").GetString());
     }
 
     [Fact]
     public void Parse_MultipleArgs()
     {
         var output = """
-            <|tool_call>call:remember_fact{key:<|"|>color<|"|>,value:<|"|>blue<|"|>}<tool_call|>
+            <tool_call>{"name": "remember_fact", "arguments": {"key": "color", "value": "blue"}}<tool_call>
             """;
 
         var calls = ToolCallParser.Parse(output);
         Assert.Single(calls);
         Assert.Equal("remember_fact", calls[0].Name);
-        Assert.Equal("color", calls[0].Args["key"]);
-        Assert.Equal("blue", calls[0].Args["value"]);
-    }
-
-    [Fact]
-    public void Parse_IgnoresToolResponseBlocks()
-    {
-        // Tool response blocks should not be parsed as tool calls
-        var output = """
-            <|tool_response>response:search_web{value:some result}<tool_response|>
-            """;
-
-        var calls = ToolCallParser.Parse(output);
-        Assert.Empty(calls);
+        Assert.Equal("color", calls[0].Arguments.GetProperty("key").GetString());
+        Assert.Equal("blue", calls[0].Arguments.GetProperty("value").GetString());
     }
 
     [Fact]
@@ -98,9 +89,9 @@ public class ToolCallParserTests
     {
         var output = """
             The weather is nice.
-            <|tool_call>call:search_web{query:<|"|>temperature Dallas<|"|>}<tool_call|>
+            <tool_call>{"name": "search_web", "arguments": {"q": "temperature Dallas"}}<tool_call>
             Let me check...
-            <|tool_call>call:get_time{}<tool_call|>
+            <tool_call>{"name": "get_time", "arguments": {}}<tool_call>
             """;
 
         var calls = ToolCallParser.Parse(output);
@@ -110,11 +101,81 @@ public class ToolCallParserTests
     [Fact]
     public void Parse_HandlesEmptyArgs()
     {
-        var output = """<|tool_call>call:get_time{}<tool_call|>""";
+        var output = """<tool_call>{"name": "get_time", "arguments": {}}<tool_call>""";
         var calls = ToolCallParser.Parse(output);
         Assert.Single(calls);
         Assert.Equal("get_time", calls[0].Name);
-        Assert.Empty(calls[0].Args);
+        Assert.Equal(0, calls[0].Arguments.EnumerateObject().Count());
+    }
+
+    [Fact]
+    public void Parse_SkipsMalformedJson()
+    {
+        var output = """
+            <tool_call>not valid json<tool_call>
+            """;
+
+        var calls = ToolCallParser.Parse(output);
+        Assert.Empty(calls);
+    }
+
+    [Fact]
+    public void Parse_WithProperCloseTag_SlashClose()
+    {
+        var output = """
+            <tool_call>{"name": "get_time", "arguments": {}}</tool_call>
+            """;
+
+        var calls = ToolCallParser.Parse(output);
+        Assert.Single(calls);
+        Assert.Equal("get_time", calls[0].Name);
+    }
+
+    [Fact]
+    public void Parse_MultipleWithInterleavedText_SlashClose()
+    {
+        // This is the real scenario that was failing: model uses </tool_call> as close,
+        // and the tool call blocks have user-directed text between them.
+        var output = """
+            <tool_call>{"name": "run_shell", "arguments": {"command":"echo hi"}}</tool_call>
+            What's the weather?
+            <tool_call>{"name": "search_web", "arguments": {"q": "weather"}}</tool_call>
+            """;
+
+        var calls = ToolCallParser.Parse(output);
+        Assert.Equal(2, calls.Count);
+        Assert.Equal("run_shell", calls[0].Name);
+        Assert.Equal("search_web", calls[1].Name);
+    }
+
+    [Fact]
+    public void StripToolCalls_RemovesSlashCloseVariant()
+    {
+        var output = """
+            Before<tool_call>{"name": "get_time", "arguments": {}}</tool_call>After
+            """;
+
+        var stripped = ToolCallParser.StripToolCalls(output);
+        Assert.DoesNotContain("<tool_call>", stripped);
+        Assert.DoesNotContain("</tool_call>", stripped);
+        Assert.Contains("Before", stripped);
+        Assert.Contains("After", stripped);
+    }
+
+    [Fact]
+    public void StripToolCalls_InterleavedText_SlashClose()
+    {
+        var output = """
+            <tool_call>{"name": "run_shell", "arguments": {"command":"echo hi"}}</tool_call>
+            Between text
+            <tool_call>{"name": "get_time", "arguments": {}}</tool_call>
+            After
+            """;
+
+        var stripped = ToolCallParser.StripToolCalls(output);
+        Assert.DoesNotContain("<tool_call>", stripped);
+        Assert.Contains("Between text", stripped);
+        Assert.Contains("After", stripped);
     }
 
     // ---- HasToolCall ----
@@ -122,7 +183,7 @@ public class ToolCallParserTests
     [Fact]
     public void HasToolCall_ReturnsTrue_WhenBlockPresent()
     {
-        Assert.True(ToolCallParser.HasToolCall("<|tool_call>call:get_time{}<tool_call|>"));
+        Assert.True(ToolCallParser.HasToolCall("""<tool_call>{"name": "get_time", "arguments": {}}<tool_call>"""));
     }
 
     [Fact]
@@ -132,9 +193,9 @@ public class ToolCallParserTests
     }
 
     [Fact]
-    public void HasToolCall_ReturnsFalse_WithToolResponseOnly()
+    public void HasToolCall_ReturnsFalse_WithDifferentTags()
     {
-        Assert.False(ToolCallParser.HasToolCall("<|tool_response>response:thing{}<tool_response|>"));
+        Assert.False(ToolCallParser.HasToolCall("some <other_tag> text"));
     }
 
     // ---- StripToolCalls ----
@@ -143,34 +204,13 @@ public class ToolCallParserTests
     public void StripToolCalls_RemovesToolCallBlocks()
     {
         var output = """
-            Before<|tool_call>call:get_time{}<tool_call|>After
+            Before<tool_call>{"name": "get_time", "arguments": {}}<tool_call>After
             """;
 
         var stripped = ToolCallParser.StripToolCalls(output);
-        Assert.DoesNotContain("<|tool_call>", stripped);
+        Assert.DoesNotContain("<tool_call>", stripped);
         Assert.Contains("Before", stripped);
         Assert.Contains("After", stripped);
-    }
-
-    [Fact]
-    public void StripToolCalls_RemovesToolResponseBlocks()
-    {
-        var output = """
-            <|tool_response>response:search_web{value:some result}<tool_response|>
-            """;
-
-        var stripped = ToolCallParser.StripToolCalls(output);
-        Assert.DoesNotContain("<|tool_response>", stripped);
-        Assert.DoesNotContain("</tool_response>", stripped);
-    }
-
-    [Fact]
-    public void StripToolCalls_RemovesTurnMarkers()
-    {
-        var output = """<|turn>user\nHello<turn|>\n<|turn>model\nHi""";
-        var stripped = ToolCallParser.StripToolCalls(output);
-        Assert.DoesNotContain("<|turn", stripped);
-        Assert.DoesNotContain("<turn|>", stripped);
     }
 
     [Fact]
@@ -180,30 +220,18 @@ public class ToolCallParserTests
         Assert.Equal(text, ToolCallParser.StripToolCalls(text));
     }
 
-    // ---- FormatResult ----
-
     [Fact]
-    public void FormatResult_CreatesValidBlock()
+    public void StripToolCalls_PreservesTextBetweenCalls()
     {
-        var result = ToolCallParser.FormatResult("get_time", "ok", "2026-04-24 22:00");
+        var output = """
+            First<tool_call>{"name": "get_time", "arguments": {}}<tool_call>Second<tool_call>{"name": "search_web", "arguments": {"q": "test"}}<tool_call>Third
+            """;
 
-        Assert.StartsWith("<|tool_response>response:get_time{", result);
-        Assert.EndsWith("<tool_response|>", result);
-        Assert.Contains("2026-04-24 22:00", result);
-    }
-
-    [Fact]
-    public void FormatResult_IncludesTruncated_WhenFlagged()
-    {
-        var result = ToolCallParser.FormatResult("search_web", "ok", "lots of data", truncated: true);
-        Assert.Contains("[...truncated]", result);
-    }
-
-    [Fact]
-    public void FormatResult_IncludesStatus()
-    {
-        var result = ToolCallParser.FormatResult("search_web", "ok", "data");
-        Assert.Contains("value:", result);
+        var stripped = ToolCallParser.StripToolCalls(output);
+        Assert.DoesNotContain("<tool_call>", stripped);
+        Assert.Contains("First", stripped);
+        Assert.Contains("Second", stripped);
+        Assert.Contains("Third", stripped);
     }
 
     // ---- TruncateResult ----

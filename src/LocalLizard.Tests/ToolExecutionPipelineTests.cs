@@ -1,3 +1,4 @@
+using System.Text.Json;
 using LocalLizard.LocalLLM.Tools;
 using Moq;
 
@@ -16,12 +17,12 @@ public class ToolExecutionPipelineTests
     }
 
     [Fact]
-    public async Task ProcessOutput_ReturnsNull_WhenToolCallEmpty()
+    public async Task ProcessOutput_ReturnsNull_WhenToolCallHasNoName()
     {
         var registry = new ToolRegistry(Array.Empty<ITool>());
         var pipeline = new ToolExecutionPipeline(registry);
 
-        var result = await pipeline.ProcessOutputAsync("<|tool_call>call:{}<tool_call|>", CancellationToken.None);
+        var result = await pipeline.ProcessOutputAsync("""<tool_call>{"arguments": {}}<tool_call>""", CancellationToken.None);
         Assert.Null(result);
     }
 
@@ -31,7 +32,7 @@ public class ToolExecutionPipelineTests
         var registry = new ToolRegistry(Array.Empty<ITool>());
         var pipeline = new ToolExecutionPipeline(registry);
 
-        var result = await pipeline.ProcessOutputAsync("<|tool_call>call:bad{}<tool_call|>", CancellationToken.None);
+        var result = await pipeline.ProcessOutputAsync("""<tool_call>{"name": "bad", "arguments": {}}<tool_call>""", CancellationToken.None);
         Assert.NotNull(result);
         Assert.Single(result.Results);
         Assert.Equal("bad", result.Results[0].Name);
@@ -44,14 +45,14 @@ public class ToolExecutionPipelineTests
     {
         var mockTool = new Mock<ITool>();
         mockTool.Setup(t => t.Name).Returns("get_time");
-        mockTool.Setup(t => t.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockTool.Setup(t => t.RunAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("Friday, April 24, 2026 at 10:03 PM");
 
         var registry = new ToolRegistry(new[] { mockTool.Object });
         var pipeline = new ToolExecutionPipeline(registry);
 
         var output = """
-            Let me check the time.<|tool_call>call:get_time{}<tool_call|>
+            Let me check the time.<tool_call>{"name": "get_time", "arguments": {}}<tool_call>
             """;
 
         var result = await pipeline.ProcessOutputAsync(output, CancellationToken.None);
@@ -65,14 +66,11 @@ public class ToolExecutionPipelineTests
     [Fact]
     public async Task ProcessOutput_ReportsError_ForUnknownTool()
     {
-        var mockTool = new Mock<ITool>();
-        mockTool.Setup(t => t.Name).Returns("get_time");
-
-        var registry = new ToolRegistry(new[] { mockTool.Object });
+        var registry = new ToolRegistry(new ITool[0]);
         var pipeline = new ToolExecutionPipeline(registry);
 
         var output = """
-            <|tool_call>call:nonexistent{}<tool_call|>
+            <tool_call>{"name": "nonexistent", "arguments": {}}<tool_call>
             """;
 
         var result = await pipeline.ProcessOutputAsync(output, CancellationToken.None);
@@ -87,14 +85,14 @@ public class ToolExecutionPipelineTests
     {
         var mockTool = new Mock<ITool>();
         mockTool.Setup(t => t.Name).Returns("failing_tool");
-        mockTool.Setup(t => t.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockTool.Setup(t => t.RunAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("Something broke"));
 
         var registry = new ToolRegistry(new[] { mockTool.Object });
         var pipeline = new ToolExecutionPipeline(registry);
 
         var output = """
-            <|tool_call>call:failing_tool{}<tool_call|>
+            <tool_call>{"name": "failing_tool", "arguments": {}}<tool_call>
             """;
 
         var result = await pipeline.ProcessOutputAsync(output, CancellationToken.None);
@@ -109,14 +107,14 @@ public class ToolExecutionPipelineTests
     {
         var mockTool = new Mock<ITool>();
         mockTool.Setup(t => t.Name).Returns("get_time");
-        mockTool.Setup(t => t.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockTool.Setup(t => t.RunAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("some time");
 
         var registry = new ToolRegistry(new[] { mockTool.Object });
         var pipeline = new ToolExecutionPipeline(registry);
 
         var output = """
-            Let me check.<|tool_call>call:get_time{}<tool_call|>Here is what I found.
+            Let me check.<tool_call>{"name": "get_time", "arguments": {}}<tool_call>Here is what I found.
             """;
 
         var result = await pipeline.ProcessOutputAsync(output, CancellationToken.None);
@@ -129,19 +127,19 @@ public class ToolExecutionPipelineTests
     {
         var mockTime = new Mock<ITool>();
         mockTime.Setup(t => t.Name).Returns("get_time");
-        mockTime.Setup(t => t.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockTime.Setup(t => t.RunAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("Friday");
 
         var mockSearch = new Mock<ITool>();
         mockSearch.Setup(t => t.Name).Returns("search_web");
-        mockSearch.Setup(t => t.RunAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        mockSearch.Setup(t => t.RunAsync(It.IsAny<JsonElement>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync("Sunny, 72°F");
 
         var registry = new ToolRegistry(new ITool[] { mockTime.Object, mockSearch.Object });
         var pipeline = new ToolExecutionPipeline(registry);
 
         var output = """
-            <|tool_call>call:get_time{}<tool_call|><|tool_call>call:search_web{query:<|"|>weather<|"|>}<tool_call|>
+            <tool_call>{"name": "get_time", "arguments": {}}<tool_call><tool_call>{"name": "search_web", "arguments": {"q": "weather"}}<tool_call>
             """;
 
         var result = await pipeline.ProcessOutputAsync(output, CancellationToken.None);

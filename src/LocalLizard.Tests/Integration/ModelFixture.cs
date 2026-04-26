@@ -6,7 +6,7 @@ using LocalLizard.LocalLLM.Tools.Tools;
 namespace LocalLizard.Tests.Integration;
 
 /// <summary>
-/// Shared model fixture: loads the Gemma 4 GGUF once and configures the
+/// Shared model fixture: loads the Qwen GGUF once and configures the
 /// tool system for any test class that needs it.
 /// </summary>
 public sealed class ModelFixture : IDisposable
@@ -19,9 +19,9 @@ public sealed class ModelFixture : IDisposable
     {
         var config = new LizardConfig
         {
-            // Use env vars if set, otherwise default brazos paths
+            // Use env vars if set, otherwise default paths
             ModelPath = Environment.GetEnvironmentVariable("LIZARD_MODEL_PATH")
-                ?? "/home/wily/ai/models/gemma-4-E2B-it-Q4_K_M.gguf",
+                ?? "/home/wily/ai/models/qwen-2.5-3b-instruct-q4_k_m.gguf",
             MmprojPath = Environment.GetEnvironmentVariable("LIZARD_MMPROJ_PATH")
                 ?? "/home/wily/ai/models/mmproj-gemma4-E2B-BF16.gguf",
             MaxTokens = 1024,

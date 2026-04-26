@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace LocalLizard.LocalLLM.Tools.Tools;
@@ -33,23 +34,15 @@ public sealed class SearchWebTool : ITool
             _http.DefaultRequestHeaders.TryAddWithoutValidation("X-Subscription-Token", apiKey);
     }
 
-    public async Task<string> RunAsync(string args, CancellationToken ct)
+    public async Task<string> RunAsync(JsonElement arguments, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(_apiKey))
             return "Search is not configured. Tell the user to set up a Brave Search API key.";
 
-        // Parse query from args
+        // Parse query from arguments JSON
         string? query = null;
-        var lines = args.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var line in lines)
-        {
-            var trimmed = line.Trim();
-            if (trimmed.StartsWith("q=", StringComparison.OrdinalIgnoreCase))
-            {
-                query = trimmed[2..].Trim();
-                break;
-            }
-        }
+        if (arguments.TryGetProperty("q", out var qEl))
+            query = qEl.GetString();
 
         if (string.IsNullOrWhiteSpace(query))
             return "Error: search_web requires a q argument with the search query.";

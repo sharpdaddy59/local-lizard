@@ -1,4 +1,5 @@
 using System.Collections.Frozen;
+using System.Text.Json;
 
 namespace LocalLizard.LocalLLM.Tools;
 
@@ -31,56 +32,82 @@ public sealed class ToolRegistry
 
     /// <summary>
     /// Generate the system prompt section describing available tools.
-    /// </summary>
-    /// <summary>
-    /// Generate the system prompt section describing available tools.
-    /// Uses Gemma 4's native &lt;|tool&gt; declaration format.
+    /// Uses Qwen 2.5's native JSON Schema tool declaration format.
     /// </summary>
     public string ToSystemPrompt()
     {
         var sb = new System.Text.StringBuilder();
-        sb.AppendLine("You have access to the following functions.");
+        sb.AppendLine("You have access to the following functions. Use them if required:");
 
         foreach (var tool in _tools.Values)
         {
-            var escapedDesc = tool.Description
-                .Replace("<", "&lt;")
-                .Replace(">", "&gt;");
-
-            // Build parameters block from description hints.
-            // The description typically looks like:
-            // "Search the web for current information. Argument: q (search query). Example: q=weather in Dallas Texas"
-            // We parse argument names out of it.
-            var paramNames = ExtractArgumentNames(tool.Description);
-            var paramsBlock = BuildParamsBlock(paramNames);
-
-            sb.Append($"<|tool>declaration:{tool.Name}{{description:<|\"|>{escapedDesc}<|\"|>");
-            if (!string.IsNullOrEmpty(paramsBlock))
-                sb.Append($",parameters:{{{paramsBlock}}}");
-            sb.AppendLine("}<tool|>");
+            var schema = BuildToolSchema(tool);
+            var json = JsonSerializer.Serialize(schema, new JsonSerializerOptions
+            {
+                WriteIndented = false
+            });
+            sb.AppendLine(json);
         }
 
         sb.AppendLine();
-        sb.AppendLine("To call a function, output: <|tool_call>call:function_name{args}<tool_call|>");
-        sb.AppendLine("For example: <|tool_call>call:get_time{}<tool_call|>");
-        sb.AppendLine("For multiple arguments: <|tool_call>call:search_web{query:<|\"|>weather<|\"|>}<tool_call|>");
+        sb.AppendLine("To call a function, output: <tool_call>{\"name\": \"function_name\", \"arguments\": {}}</tool_call>");
+        sb.AppendLine("For example: <tool_call>{\"name\": \"get_time\", \"arguments\": {}}</tool_call>");
+        sb.AppendLine("For multiple arguments: <tool_call>{\"name\": \"search_web\", \"arguments\": {\"q\": \"weather in Dallas\"}}</tool_call>");
         return sb.ToString();
     }
 
     /// <summary>
-    /// Extract argument/parameter names from a tool's description text.
-    /// Looks for patterns like "Argument: argName" or "key" in common formats.
+    /// Build a JSON Schema-style tool declaration for a given tool.
     /// </summary>
-    private static string[] ExtractArgumentNames(string description)
+    private static object BuildToolSchema(ITool tool)
     {
-        var names = new List<string>();
+        var paramNames = ExtractArgumentNames(tool.Description);
+        var properties = new Dictionary<string, object>();
+        var required = new List<string>();
+
+        foreach (var param in paramNames)
+        {
+            properties[param.Name] = new Dictionary<string, object>
+            {
+                ["type"] = "string",
+                ["description"] = param.Description
+            };
+            if (param.Required)
+                required.Add(param.Name);
+        }
+
+        return new Dictionary<string, object>
+        {
+            ["type"] = "function",
+            ["function"] = new Dictionary<string, object>
+            {
+                ["name"] = tool.Name,
+                ["description"] = tool.Description,
+                ["parameters"] = new Dictionary<string, object>
+                {
+                    ["type"] = "object",
+                    ["properties"] = properties,
+                    ["required"] = required
+                }
+            }
+        };
+    }
+
+    /// <summary>
+    /// Extract argument/parameter names and descriptions from a tool's description text.
+    /// </summary>
+    private static List<(string Name, string Description, bool Required)> ExtractArgumentNames(string description)
+    {
+        var parameters = new List<(string Name, string Description, bool Required)>();
         var lines = description.Split('\n', StringSplitOptions.RemoveEmptyEntries);
         foreach (var line in lines)
         {
             var trimmed = line.Trim();
-            // Match "Argument: name" or "Arguments: name1, name2"
-            if (trimmed.StartsWith("Argument", StringComparison.OrdinalIgnoreCase) ||
-                trimmed.StartsWith("Arguments", StringComparison.OrdinalIgnoreCase))
+            // Match patterns like:
+            // "Argument: q (search query)" or "Arguments: key, value" or
+            // "Argument: key (the fact name)"
+            if (trimmed.Contains("Argument:", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.Contains("Arguments:", StringComparison.OrdinalIgnoreCase))
             {
                 var colonIdx = trimmed.IndexOf(':');
                 if (colonIdx >= 0)
@@ -88,31 +115,27 @@ public sealed class ToolRegistry
                     var afterColon = trimmed[(colonIdx + 1)..].Trim();
                     foreach (var part in afterColon.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                     {
-                        // Get just the name (before '=' or '(' or space)
-                        var name = part.Split('=', '(', ' ')[0].Trim().TrimEnd('.');
-                        if (!string.IsNullOrEmpty(name) && !names.Contains(name))
-                            names.Add(name);
+                        // Extract name (before '=' or '(' or space)
+                        var parenIdx = part.IndexOf('(');
+                        var name = parenIdx >= 0
+                            ? part[..parenIdx].Trim()
+                            : part.Split('=', ' ')[0].Trim().TrimEnd('.');
+
+                        // Extract description from parenthesized text
+                        var desc = "";
+                        if (parenIdx >= 0)
+                        {
+                            var closeParen = part.IndexOf(')', parenIdx);
+                            if (closeParen >= 0)
+                                desc = part[(parenIdx + 1)..closeParen].Trim();
+                        }
+
+                        if (!string.IsNullOrEmpty(name) && parameters.All(p => p.Name != name))
+                            parameters.Add((name, desc, true));
                     }
                 }
             }
         }
-        return names.ToArray();
-    }
-
-    /// <summary>
-    /// Build the parameters block portion of a tool declaration.
-    /// Returns a string like "key:{type:str},value:{type:str}" or empty string if no params.
-    /// </summary>
-    private static string BuildParamsBlock(string[] paramNames)
-    {
-        if (paramNames.Length == 0)
-            return string.Empty;
-
-        var parts = new List<string>();
-        foreach (var name in paramNames)
-        {
-            parts.Add($"{name}:{{type:<|\"|>str<|\"|>}}");
-        }
-        return string.Join(",", parts);
+        return parameters;
     }
 }
