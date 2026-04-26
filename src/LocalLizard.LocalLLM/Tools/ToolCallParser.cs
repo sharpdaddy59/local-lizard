@@ -24,7 +24,7 @@ public sealed class ToolCallParser
     // Arguments: everything between { } — but we need a more careful match
     // since { } can nest and <|"|> delimiters contain { } too
     private static readonly Regex ToolCallRegex = new(
-        @"<\|tool_call\>call:(\w+)\{(.*?)\}<tool_call\|>",
+        @"<\|tool_call\>call:(\w+)\{(.*?)\}<tool_call(?:\|>)?",
         RegexOptions.Singleline | RegexOptions.Compiled);
 
     /// <summary>

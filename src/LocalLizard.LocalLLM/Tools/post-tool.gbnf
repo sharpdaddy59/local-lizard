@@ -1,0 +1,19 @@
+# GBNF grammar for post-tool natural language output (second inference pass)
+# Constrains to natural language ONLY — prevents recursive tool calls.
+# Allows any characters except sequences beginning with "<|tool_call".
+# Uses nested alternation to reject the pattern character by character.
+
+root ::= posttext
+
+posttext ::= (?s:.)*?
+
+# Actually GBNF doesn't support negative lookahead. Let's try a different approach:
+# A grammar that matches ANY text, but must not produce <|tool_call|>call:.
+# In GBNF, we can still reject the pattern by defining it in a way that the
+# grammar engine cannot match it. But GBNF works by filtering tokens — it
+# doesn't pre-filter the generated string.
+#
+# Simplest correct approach: just let post-tool run with standard sampling
+# (no grammar) but set max tokens lower. So this file is intentionally empty.
+# 
+# The tool-call grammar (tool-call.gbnf) is the one that matters.

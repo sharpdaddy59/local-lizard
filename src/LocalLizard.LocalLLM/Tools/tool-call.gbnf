@@ -1,0 +1,23 @@
+# GBNF grammar for tool call format (used with lazy grammar, first inference pass)
+# Only constrains the part of generation inside <|tool_call|> blocks.
+# Free text before the trigger flows normally without constraint.
+#
+# Tool call format: <|tool_call|>call:toolname{key1:val1,key2:val2}<tool_call|>
+
+root ::= "<|tool_call|>call:" name "{" args "}<tool_call|>"
+
+# Tool name: lowercase + underscore (e.g., get_time, search_web)
+name ::= [a-z_]+
+
+# Arguments: empty or comma-separated key:value pairs
+args ::= (pair ("," pair)*)?
+pair ::= key ":" value
+key ::= [a-zA-Z_]+
+
+# Value: flexible — strings allow any printable characters including newlines
+# and Unicode. Numbers and booleans get specific rules.
+value ::= string | number | bool | empty
+empty ::= ""
+string ::= [^}]+
+number ::= [0-9]+ ("." [0-9]+)?
+bool ::= "true" | "false"
