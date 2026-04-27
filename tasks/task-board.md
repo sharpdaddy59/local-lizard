@@ -23,7 +23,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | V0.1 | RC08 mic capture test (arecord/ffmpeg) | ✅ | 16KHz mono S16_LE verified on brazos headless. Mic gain set to 50% (35dB) — balances voice pickup vs background noise (A/C). Capture gain at 100% was causing excessive ambient noise. |
-| V0.2 | C# audio capture approach | ❌ | **Flux feedback:** NAudio on Linux is fragile. Two proven paths: (a) small P/Invoke wrapper around `libasound` — ~50 lines (`snd_pcm_open`, `snd_pcm_readi`, `snd_pcm_close`), or (b) subprocess `arecord`/`parec`. Flux can write the P/Invoke wrapper if we go that route. |
+| V0.2 | C# audio capture via ALSA P/Invoke | ✅ (`534ba73`) | `AlsaCapture` — P/Invoke wrapper around `libasound.so.2`. `ReadAsync()`, `ReadUntilSilenceAsync()` (energy VAD), xrun recovery. |
 | V0.3 | Buffering & chunking for STT | ❌ | Fixed-size buffers, silence detection |
 | V0.4 | Recording timeout / trigger mechanism | ❌ | Max duration, silence timeout, manual trigger |
 
