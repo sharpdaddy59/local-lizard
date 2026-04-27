@@ -12,9 +12,9 @@
 | Piper TTS → RC08 speaker | ✅ Verified (Apr 26) |
 | Telegram bot (text) | ✅ Deployed |
 | Telegram voice in → STT → LLM → TTS → voice out | ✅ Already wired via `HandleVoiceMessageAsync` |
-| Physical mic capture (always-listening) | ❌ Not started (Phase 2) |
+| Physical mic capture + always-listening loop | ✅ Phase 0 complete |
 | VAD / wake word | ❌ Not started (Phase 3) |
-| Camera brightness gate | ✅ Validated — 94x difference open vs closed |
+| Camera brightness gate | ✅ Tested — cover open/closed detected correctly, 94x difference |
 
 ## Phases
 
@@ -33,8 +33,8 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| V1.1 | Whisper integration approach | ❌ | **Flux feedback:** We already have Whisper.net P/Invoke bindings working (from previous T5 task). Subprocess reloads model each time (~1s overhead). Better options: (a) use existing bindings directly, (b) daemon mode (keep whisper process alive, pipe audio via stdin). Pick one explicitly. |
-| V1.2 | Wire STT into voice pipeline | ❌ | Connect Whisper output → intent router (same path as Telegram text/voice) |
+| V1.1 | Whisper integration approach | ✅ | Whisper.net P/Invoke bindings already wired in `CaptureAndTranscribeAsync`. 3-strike fallback to subprocess. No separate daemon needed. |
+| V1.2 | Wire STT into voice pipeline | ✅ | `CaptureAndTranscribeAsync()` already connects mic capture → WAV → Whisper → text. Same path as Telegram voice. |
 | V1.3 | Warm-start model | ❌ | Keep whisper model loaded between turns to save 1-2s per interaction. Relevant for Phase 2 latency. |
 | V1.4 | STT error handling & logging | ❌ | Bad audio, empty transcript, model load failures |
 
@@ -43,7 +43,7 @@
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| V2.1 | Wire audio capture → STT | ❌ | Connect Phase 0 output to Phase 1 STT |
+| V2.1 | Wire audio capture → STT | ✅ (`380b6b2`) | `CaptureAndTranscribeAsync()` already connects mic → WAV → Whisper → text. `StartListeningLoopAsync()` provides continuous loop with brightness gate. |
 | V2.2 | Wire LLM output → Piper TTS → aplay | ❌ | Piper → speaker already works independently (Apr 26 test), just automate |
 | V2.3 | End-to-end smoke test (speak → hear reply via RC08) | ❌ | First full physical voice conversation on brazos |
 | V2.4 | Latency measurement & logging | ❌ | Target: <5s total for deterministic intents. shm for WAV files avoids disk wear (Flux's suggestion). |
@@ -75,9 +75,13 @@
 ## Milestones
 
 - **M1:** Mic captures 16KHz WAV, whisper returns text ✅
-- **M2:** Full voice loop works end-to-end via RC08 ✅
-- **M3:** Sub-5s latency on deterministic intents ✅
-- **M4:** Voice pipeline reliable enough for daily use ✅
+- **M2:** Full voice loop works end-to-end via RC08 ❌ (Phase 2)
+- **M3:** Sub-5s latency on deterministic intents ❌ (Phase 2)
+- **M4:** Voice pipeline reliable enough for daily use ❌ (Phase 4)
+
+## Known Issues
+
+- **Cold-start silence detection:** `ReadUntilSilenceAsync` can time out before user starts speaking if there's a delay between opening the device and speech onset. Fix: add a pre-roll grace period or require speech before counting silence. Only affects "start then listen" pattern (e.g., `/listen` command). Always-listening loop (test 4) is unaffected.
 
 ## Not Yet Scoped
 
@@ -94,10 +98,11 @@
 
 ## Hardware Reference
 
-- **Mic:** RC08 webcam, ALSA Card 1, Capture at 100% gain, 16KHz mono S16_LE
+- **Mic:** RC08 webcam, ALSA Card 1, Capture at 50% gain (35dB), 16KHz mono S16_LE
 - **Speaker:** RC08 webcam, ALSA Card 1, PCM at 75%, 48KHz (Piper resamples from 22050Hz)
 - **GPU:** Radeon Vega (Vulkan for whisper.cpp, 1.81x CPU speed)
-- **Audio workaround:** `sg audio -c` for ALSA commands (user needs logout/login for permanent `audio` group)
+- **Card 2:** CX20632 Analog (motherboard) — headphone jack only, no built-in speaker
+- **Audio workaround:** `sg audio -c` for subprocess calls. P/Invoke path requires permanent `audio` group (logout/login needed).
 
 ## Flux's Feedback Incorporated
 
