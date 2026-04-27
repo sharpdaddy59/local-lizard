@@ -52,6 +52,12 @@ public sealed class LizardConfig
     public double WakeWordCommandTimeoutSec { get; set; } = 10;
     public double WakeWordSilenceTimeoutSec { get; set; } = 1.5;
 
+    // ---- Audio capture ----
+    public string AlsaDevice { get; set; } = "hw:1,0";
+    public int CaptureMaxDurationMs { get; set; } = 5000;
+    public int CaptureSilenceThresholdMs { get; set; } = 800;
+    public double CaptureSilenceRms { get; set; } = 0.02;
+
     // ---- Secrets ----
     public string BraveSearchApiKey { get; set; } = "";
     public string TelegramBotToken { get; set; } = "";
@@ -103,6 +109,10 @@ public sealed class LizardConfig
         SetFromEnv("LIZARD_BRAVE_SEARCH_KEY", v => BraveSearchApiKey = v);
         SetFromEnv("LIZARD_TELEGRAM_BOT_TOKEN", v => TelegramBotToken = v);
         SetFromEnv("LIZARD_TOOLS_DISABLED", v => ToolsEnabled = !bool.Parse(v));
+        SetFromEnv("LIZARD_ALSA_DEVICE", v => AlsaDevice = v);
+        SetFromEnv("LIZARD_CAPTURE_MAX_DURATION_MS", v => CaptureMaxDurationMs = int.Parse(v));
+        SetFromEnv("LIZARD_CAPTURE_SILENCE_MS", v => CaptureSilenceThresholdMs = int.Parse(v));
+        SetFromEnv("LIZARD_CAPTURE_SILENCE_RMS", v => CaptureSilenceRms = double.Parse(v));
     }
 
     private void ApplyJsonConfig()
@@ -149,6 +159,10 @@ public sealed class LizardConfig
                     case "BraveSearchApiKey": BraveSearchApiKey = kvp.Value.GetString() ?? BraveSearchApiKey; break;
                     case "TelegramBotToken": TelegramBotToken = kvp.Value.GetString() ?? TelegramBotToken; break;
                     case "ToolsEnabled": ToolsEnabled = kvp.Value.GetBoolean(); break;
+                    case "AlsaDevice": AlsaDevice = kvp.Value.GetString() ?? AlsaDevice; break;
+                    case "CaptureMaxDurationMs": CaptureMaxDurationMs = kvp.Value.GetInt32(); break;
+                    case "CaptureSilenceThresholdMs": CaptureSilenceThresholdMs = kvp.Value.GetInt32(); break;
+                    case "CaptureSilenceRms": CaptureSilenceRms = kvp.Value.GetDouble(); break;
                 }
             }
         }

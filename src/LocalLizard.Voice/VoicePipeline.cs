@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using LocalLizard.Common;
+using LocalLizard.Voice.Capture;
 
 namespace LocalLizard.Voice;
 
@@ -13,6 +15,7 @@ public sealed class VoicePipeline : IDisposable
     private readonly LizardConfig _config;
     private WhisperSTTService? _whisperService;
     private PiperTTSService? _piperService;
+    private AlsaCapture? _alsaCapture;
     private bool _useWhisperNet = true;
     private bool _usePiperService = true;
     private bool _disposed;
@@ -206,6 +209,96 @@ public sealed class VoicePipeline : IDisposable
     }
 
     /// <summary>
+    /// Capture audio from the physical mic (via ALSA) and transcribe to text.
+    /// Uses energy-based VAD to detect speech boundaries.
+    /// </summary>
+    /// <param name="ct">Cancellation token (stops capture immediately).</param>
+    /// <returns>Transcribed text, or empty string if nothing detected.</returns>
+    public async Task<string> CaptureAndTranscribeAsync(CancellationToken ct = default)
+    {
+        _alsaCapture ??= new AlsaCapture(_config.AlsaDevice);
+
+        // Capture raw PCM with silence-based endpointing
+        var pcmData = await _alsaCapture.ReadUntilSilenceAsync(
+            maxDurationMs: _config.CaptureMaxDurationMs,
+            silenceThresholdMs: _config.CaptureSilenceThresholdMs,
+            silenceRmsThreshold: _config.CaptureSilenceRms,
+            ct: ct);
+
+        if (pcmData.Length == 0)
+            return string.Empty;
+
+        // Wrap raw PCM in WAV header for Whisper
+        using var wavStream = PcmToWavStream(pcmData, AlsaCapture.SampleRate, AlsaCapture.Channels);
+
+        // Transcribe using Whisper.net (with process wrapper fallback)
+        if (_useWhisperNet && _whisperService != null)
+        {
+            try
+            {
+                return await _whisperService.TranscribeAsync(wavStream, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Whisper.net failed: {ex.Message}");
+                Console.WriteLine("Falling back to process wrapper");
+                _useWhisperNet = false;
+            }
+        }
+
+        // Fallback: save to temp WAV, run whisper.cpp process
+        var tempPath = Path.GetTempFileName() + ".wav";
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, wavStream.ToArray(), ct);
+            return await TranscribeWithProcessWrapperAsync(tempPath, ct);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); } catch { }
+        }
+    }
+
+    /// <summary>
+    /// Convert raw S16_LE PCM bytes to a WAV stream with proper headers.
+    /// Whisper expects a well-formed WAV file/stream.
+    /// </summary>
+    private static MemoryStream PcmToWavStream(byte[] pcmData, int sampleRate, int channels)
+    {
+        var bitsPerSample = 16;
+        var byteRate = sampleRate * channels * bitsPerSample / 8;
+        var blockAlign = channels * bitsPerSample / 8;
+        var dataSize = pcmData.Length;
+        var fileSize = 36 + dataSize;
+
+        var ms = new MemoryStream(44 + dataSize);
+        using var writer = new BinaryWriter(ms, System.Text.Encoding.ASCII, leaveOpen: true);
+
+        // RIFF header
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("RIFF"));
+        writer.Write(fileSize);
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+
+        // fmt chunk
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("fmt "));
+        writer.Write(16); // chunk size
+        writer.Write((short)1); // PCM format
+        writer.Write((short)channels);
+        writer.Write(sampleRate);
+        writer.Write(byteRate);
+        writer.Write((short)blockAlign);
+        writer.Write((short)bitsPerSample);
+
+        // data chunk
+        writer.Write(System.Text.Encoding.ASCII.GetBytes("data"));
+        writer.Write(dataSize);
+        writer.Write(pcmData);
+
+        ms.Position = 0;
+        return ms;
+    }
+
+    /// <summary>
     /// Basic process wrapper implementation for piper.
     /// </summary>
     private async Task<string> SynthesizeWithProcessWrapperAsync(string text, string outputPath, CancellationToken ct = default)
@@ -237,6 +330,9 @@ public sealed class VoicePipeline : IDisposable
             
             _piperService?.Dispose();
             _piperService = null;
+            
+            _alsaCapture?.Dispose();
+            _alsaCapture = null;
             
             _disposed = true;
         }
