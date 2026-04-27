@@ -15,15 +15,15 @@ All 15 original tasks (T1–T15) complete. Shifting to the **Headless Voice Agen
 | Phase 1d | Think block suppression + base prompt | ✅ (`2937ee9`) | Qwen3 1.7B/Qwen3.5 4B thinking blocked |
 | Phase 1e | Single-arg remember_fact / lookup_fact | ✅ (`2937ee9`) | memory: / query: natural language arguments |
 | Phase 1f | Qwen3 1.7B as default model | ✅ (`2937ee9`) | 1.1GB, ~3x faster than Qwen 2.5 3B |
+| Phase 2a | Router cleanup: possessive-only lookup, structured JSON handlers, cascade (null → next intent) | ✅ (`f11b6bf`) | Fixes false positives on "what is X" math queries |
+| Phase 2b | New intents: weather, math (bc), broad web search | ✅ (`9b3fda6`) | 134 lines added, 51/51 tests |
+| Phase 2c | Bugfix: bc trailing newline (WriteLineAsync) | ✅ (`41222d9`) | bc needs \n to evaluate |
+| Phase 4 | Weather response formatting: extract temp/conditions/humidity/wind from snippets | ✅ (`fc32aae`) | Clean one-liner vs raw 5-result dump |
 
 ## Next
 
 | Phase | What | Priority |
 |-------|------|----------|
-| **Phase 2a — Router cleanup** | Fix false positives in LookupPattern. Cascade router: handlers return null → try next intent → LLM fallthrough. Structured JSON in handler. | High |
-| **Phase 2b — New intents** | Weather, math, web search, expanded memory patterns. Deterministic route + cascading fallthrough. | High |
-| **Phase 2c — Weather formatting** | Extract temp/conditions from search results. Template response. | Medium |
-| **Phase 2d — LLM path tuning** | enable_thinking config option. Test Qwen3.5 4B with thinking disabled. | Low |
 | **Deploy** | Build, sync to brazos via shared NFS, restart service, Telegram smoke test. | When ready |
 
 **Design:** `/shared/projects/local-lizard/docs/expanded-intent-router-implementation.md`
