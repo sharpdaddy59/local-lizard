@@ -399,6 +399,116 @@ public sealed class VoicePipeline : IDisposable
     }
 
     /// <summary>
+    /// Synthesize text to speech and play it through the default audio output (aplay).
+    /// Pipes Piper output directly to aplay for zero-temp-file playback.
+    /// </summary>
+    public async Task SpeakAsync(string text, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        // Synthesize to memory via Piper
+        byte[] wavData;
+        if (_usePiperService && _piperService != null)
+        {
+            try
+            {
+                wavData = await _piperService.SynthesizeToMemoryAsync(text, ct);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"PiperTTSService failed: {ex.Message}");
+                Console.WriteLine("Falling back to process wrapper for speech");
+                _usePiperService = false;
+                wavData = await SynthesizeToMemoryWithWrapperAsync(text, ct);
+            }
+        }
+        else
+        {
+            wavData = await SynthesizeToMemoryWithWrapperAsync(text, ct);
+        }
+
+        // Play via aplay (pipe WAV data directly)
+        await PlayAudioAsync(wavData, ct);
+    }
+
+    /// <summary>
+    /// Start a full conversation loop: listen → route/respond → speak → repeat.
+    /// Uses the camera brightness gate as privacy toggle.
+    /// </summary>
+    /// <param name="onHeard">
+    /// Async function that receives transcribed text and returns the response to speak.
+    /// This is the "brain" — could be intent router, LLM, or any handler.
+    /// Return null or empty string to skip speaking and continue listening.
+    /// </param>
+    /// <param name="ct">Cancellation token to stop the loop.</param>
+    public async Task StartConversationLoopAsync(
+        Func<string, Task<string>> onHeard,
+        CancellationToken ct = default)
+    {
+        await StartListeningLoopAsync(async text =>
+        {
+            try
+            {
+                var response = await onHeard(text);
+                if (!string.IsNullOrWhiteSpace(response))
+                {
+                    var preview = response.Length > 80 ? response[..80] + "..." : response;
+                    Console.WriteLine($"[VoiceLoop] Speaking: \"{preview}\"");
+                    await SpeakAsync(response, ct);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[VoiceLoop] Response error: {ex.Message}");
+            }
+            return true; // Always continue listening
+        }, ct);
+    }
+
+    /// <summary>
+    /// Play raw WAV bytes through aplay.
+    /// </summary>
+    private static async Task PlayAudioAsync(byte[] wavData, CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo
+        {
+            FileName = "aplay",
+            Arguments = "-q", // Quiet mode
+            RedirectStandardInput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        using var proc = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start aplay");
+
+        await proc.StandardInput.BaseStream.WriteAsync(wavData, ct);
+        proc.StandardInput.Close();
+        await proc.WaitForExitAsync(ct);
+    }
+
+    /// <summary>
+    /// Synthesize text to WAV bytes using process wrapper fallback.
+    /// </summary>
+    private async Task<byte[]> SynthesizeToMemoryWithWrapperAsync(string text, CancellationToken ct)
+    {
+        var tempPath = Path.Combine(Path.GetTempPath(), $"locallizard-tts-{Path.GetRandomFileName()}.wav");
+        try
+        {
+            await SynthesizeWithProcessWrapperAsync(text, tempPath, ct);
+            return await File.ReadAllBytesAsync(tempPath, ct);
+        }
+        finally
+        {
+            try { File.Delete(tempPath); } catch { }
+        }
+    }
+
+    /// <summary>
     /// Basic process wrapper implementation for piper.
     /// </summary>
     private async Task<string> SynthesizeWithProcessWrapperAsync(string text, string outputPath, CancellationToken ct = default)

@@ -42,7 +42,9 @@ class Program
             Console.WriteLine("  3. Capture + transcribe (speak something)");
             Console.WriteLine("  4. Listening loop (continuous, Ctrl+C to stop)");
             Console.WriteLine("  5. List ALSA capture devices");
-            Console.WriteLine("  6. Run all tests");
+            Console.WriteLine("  6. Speak test (capture → echo back via TTS)");
+            Console.WriteLine("  7. Conversation loop (capture → respond → speak, Ctrl+C to stop)");
+            Console.WriteLine("  8. Run all tests");
             Console.WriteLine("  q. Quit");
             Console.Write("\nChoice: ");
 
@@ -69,6 +71,12 @@ class Program
                         await TestListDevices();
                         break;
                     case "6":
+                        await TestSpeak(config);
+                        break;
+                    case "7":
+                        await TestConversationLoop(config);
+                        break;
+                    case "8":
                         await RunAllTests(config);
                         break;
                     case "q":
@@ -204,6 +212,65 @@ class Program
             Console.WriteLine($"  [Turn {turnCount}] Heard: \"{text}\"");
             await Task.CompletedTask;
             return true; // Continue listening
+        }, cts.Token);
+
+        Console.WriteLine($"  Stopped after {turnCount} turns.");
+    }
+
+    static async Task TestSpeak(LizardConfig config)
+    {
+        using var pipeline = new VoicePipeline(config);
+
+        Console.WriteLine("  Testing text-to-speech via aplay...");
+        Console.WriteLine("  You should hear: 'Hello! I am Local Lizard. Can you hear me?'");
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await pipeline.SpeakAsync("Hello! I am Local Lizard. Can you hear me?");
+        sw.Stop();
+
+        Console.WriteLine($"  Spoke in {sw.ElapsedMilliseconds}ms");
+
+        Console.WriteLine("\n  Now testing with transcribed input...");
+        Console.WriteLine("  Speak something (will echo it back):");
+
+        var text = await pipeline.CaptureAndTranscribeAsync();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            Console.WriteLine("  ⚠️ No transcription. Skipping echo.");
+            return;
+        }
+
+        Console.WriteLine($"  Heard: \"{text}\"");
+        Console.WriteLine("  Echoing back via TTS...");
+
+        sw.Restart();
+        await pipeline.SpeakAsync($"You said: {text}");
+        sw.Stop();
+
+        Console.WriteLine($"  Spoke in {sw.ElapsedMilliseconds}ms ✅");
+    }
+
+    static async Task TestConversationLoop(LizardConfig config)
+    {
+        using var pipeline = new VoicePipeline(config);
+        using var cts = new CancellationTokenSource();
+
+        Console.WriteLine("  Starting conversation loop with echo responder.");
+        Console.WriteLine("  Speak and it will echo back. Camera cover = privacy toggle.");
+        Console.WriteLine("  Press Ctrl+C to stop.");
+        Console.CancelKeyPress += (_, _) => cts.Cancel();
+
+        var turnCount = 0;
+        await pipeline.StartConversationLoopAsync(text =>
+        {
+            turnCount++;
+            Console.WriteLine($"  [Turn {turnCount}] Routing: \"{text}\"");
+
+            // Echo responder — replace with intent router / LLM in production
+            var response = $"You said: {text}";
+            Console.WriteLine($"  [Turn {turnCount}] Responding: \"{response}\"");
+
+            return Task.FromResult(response);
         }, cts.Token);
 
         Console.WriteLine($"  Stopped after {turnCount} turns.");
