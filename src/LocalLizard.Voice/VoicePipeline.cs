@@ -470,14 +470,17 @@ public sealed class VoicePipeline : IDisposable
 
     /// <summary>
     /// Play raw WAV bytes through aplay.
+    /// Captures stderr for diagnostics if aplay fails.
     /// </summary>
     private static async Task PlayAudioAsync(byte[] wavData, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
             FileName = "aplay",
-            Arguments = "-q", // Quiet mode
+            // No flags — let aplay read format from WAV header
+            Arguments = "",
             RedirectStandardInput = true,
+            RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -486,9 +489,31 @@ public sealed class VoicePipeline : IDisposable
         using var proc = Process.Start(psi)
             ?? throw new InvalidOperationException("Failed to start aplay");
 
-        await proc.StandardInput.BaseStream.WriteAsync(wavData, ct);
-        proc.StandardInput.Close();
+        // Read stderr in background for error diagnostics
+        var stderrTask = proc.StandardError.ReadToEndAsync(ct);
+
+        try
+        {
+            await proc.StandardInput.BaseStream.WriteAsync(wavData, ct);
+            proc.StandardInput.Close();
+        }
+        catch (IOException ex)
+        {
+            // aplay died before we finished writing — get the error
+            await proc.WaitForExitAsync(ct);
+            var error = await stderrTask;
+            throw new InvalidOperationException(
+                $"aplay failed: {error.Trim()} (exit code {proc.ExitCode})", ex);
+        }
+
         await proc.WaitForExitAsync(ct);
+        var stderr = await stderrTask;
+
+        if (proc.ExitCode != 0)
+        {
+            throw new InvalidOperationException(
+                $"aplay exited with code {proc.ExitCode}: {stderr.Trim()}");
+        }
     }
 
     /// <summary>
