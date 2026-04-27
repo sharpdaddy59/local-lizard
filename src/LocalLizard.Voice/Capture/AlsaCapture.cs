@@ -82,6 +82,11 @@ public sealed class AlsaCapture : IDisposable
     /// ALSA PCM device name. Default "hw:1,0" for RC08 webcam.
     /// Use "plughw:1,0" for automatic format conversion if needed.
     /// </param>
+    /// <remarks>
+    /// The process running this code must have audio group membership
+    /// (sudo usermod -aG audio &lt;user&gt; + logout/login) to access ALSA devices.
+    /// The sg/audio workaround only applies to subprocess calls.
+    /// </remarks>
     public AlsaCapture(string deviceName = "hw:1,0")
     {
         DeviceName = deviceName;
@@ -98,8 +103,9 @@ public sealed class AlsaCapture : IDisposable
         // Configure: 16KHz, mono, S16_LE, interleaved
         // latency (microseconds) = (buffer_size * 1_000_000) / rate
         // 50000 µs = 50ms buffer = 800 frames
+        // softResample: 0 — RC08 natively supports 16KHz, no resampling needed
         ret = snd_pcm_set_params(_pcm, FormatS16Le, AccessInterleaved,
-            Channels, SampleRate, softResample: 1, latency: 50000);
+            Channels, SampleRate, softResample: 0, latency: 50000);
         if (ret < 0)
         {
             var err = Marshal.PtrToStringAnsi(snd_strerror(ret)) ?? $"error code {ret}";
