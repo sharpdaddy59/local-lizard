@@ -16,6 +16,7 @@ public sealed class VoicePipeline : IDisposable
     private WhisperSTTService? _whisperService;
     private PiperTTSService? _piperService;
     private readonly Lazy<AlsaCapture> _alsaCapture;
+    private readonly Lazy<BrightnessGate> _brightnessGate;
     private bool _useWhisperNet = true;
     private bool _usePiperService = true;
     private int _whisperNetFailCount;
@@ -25,6 +26,7 @@ public sealed class VoicePipeline : IDisposable
     {
         _config = config;
         _alsaCapture = new Lazy<AlsaCapture>(() => new AlsaCapture(config.AlsaDevice), LazyThreadSafetyMode.ExecutionAndPublication);
+        _brightnessGate = new Lazy<BrightnessGate>(() => new BrightnessGate(config.CameraDevice, config.CameraBrightnessThreshold), LazyThreadSafetyMode.ExecutionAndPublication);
         InitializeWhisperService();
         InitializePiperService();
     }
@@ -271,6 +273,93 @@ public sealed class VoicePipeline : IDisposable
     }
 
     /// <summary>
+    /// Start a continuous listening loop using the physical mic.
+    /// Uses the camera brightness gate as a privacy/listen toggle:
+    /// cover open = listening, cover closed = privacy mode (mic ignored).
+    ///
+    /// The brightness check runs infrequently (configurable) to avoid
+    /// blinking the webcam LED. Between checks, the previous state is assumed.
+    /// </summary>
+    /// <param name="onTranscribed">
+    /// Callback invoked with transcribed text when speech is detected.
+    /// Return true to continue listening, false to stop the loop.
+    /// </param>
+    /// <param name="ct">Cancellation token to stop the loop.</param>
+    public async Task StartListeningLoopAsync(
+        Func<string, Task<bool>> onTranscribed,
+        CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var gate = _brightnessGate.Value;
+        var checkInterval = TimeSpan.FromSeconds(_config.CameraCheckIntervalSec);
+        var minAudioBytes = _config.CaptureMinAudioMs * AlsaCapture.FrameSize * AlsaCapture.SampleRate / 1000;
+
+        var lastCheck = DateTime.MinValue;
+        var listening = true; // Assume open until first check
+        var gateCheckCount = 0;
+
+        Console.WriteLine("[ListeningLoop] Starting. Camera cover = privacy toggle.");
+
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                // Check brightness gate periodically (not every cycle)
+                var now = DateTime.UtcNow;
+                if (now - lastCheck >= checkInterval)
+                {
+                    listening = await gate.IsOpenAsync(ct);
+                    lastCheck = now;
+                    gateCheckCount++;
+
+                    if (!listening)
+                    {
+                        // Cover closed — sleep and re-check
+                        await Task.Delay(500, ct);
+                        continue;
+                    }
+                }
+
+                if (!listening)
+                {
+                    await Task.Delay(500, ct);
+                    continue;
+                }
+
+                // Capture from mic with silence-based endpointing
+                var text = await CaptureAndTranscribeAsync(ct);
+
+                // Filter: reject empty or very short transcriptions (noise)
+                if (string.IsNullOrWhiteSpace(text) || text.Length < 2)
+                    continue;
+
+                Console.WriteLine($"[ListeningLoop] Heard: \"{text}\"");
+
+                // Invoke callback
+                var shouldContinue = await onTranscribed(text);
+                if (!shouldContinue)
+                {
+                    Console.WriteLine("[ListeningLoop] Callback requested stop.");
+                    break;
+                }
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[ListeningLoop] Error: {ex.Message}");
+                // Brief pause before retrying to avoid tight error loop
+                await Task.Delay(1000, ct);
+            }
+        }
+
+        Console.WriteLine($"[ListeningLoop] Stopped after {gateCheckCount} brightness checks.");
+    }
+
+    /// <summary>
     /// Convert raw S16_LE PCM bytes to a WAV stream with proper headers.
     /// Whisper expects a well-formed WAV file/stream.
     /// </summary>
@@ -342,7 +431,11 @@ public sealed class VoicePipeline : IDisposable
             _piperService?.Dispose();
             _piperService = null;
             
-            _alsaCapture.Value.Dispose();
+            if (_brightnessGate.IsValueCreated)
+                _brightnessGate.Value.Dispose();
+            
+            if (_alsaCapture.IsValueCreated)
+                _alsaCapture.Value.Dispose();
             
             _disposed = true;
         }

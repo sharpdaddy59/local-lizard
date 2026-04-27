@@ -58,6 +58,12 @@ public sealed class LizardConfig
     public int CaptureSilenceThresholdMs { get; set; } = 800;
     public double CaptureSilenceRms { get; set; } = 0.02;
 
+    // ---- Camera brightness gate ----
+    public string CameraDevice { get; set; } = "/dev/video0";
+    public int CameraBrightnessThreshold { get; set; } = 10;
+    public double CameraCheckIntervalSec { get; set; } = 5.0;
+    public int CaptureMinAudioMs { get; set; } = 500;
+
     // ---- Secrets ----
     public string BraveSearchApiKey { get; set; } = "";
     public string TelegramBotToken { get; set; } = "";
@@ -113,6 +119,10 @@ public sealed class LizardConfig
         SetFromEnv("LIZARD_CAPTURE_MAX_DURATION_MS", v => CaptureMaxDurationMs = int.Parse(v));
         SetFromEnv("LIZARD_CAPTURE_SILENCE_MS", v => CaptureSilenceThresholdMs = int.Parse(v));
         SetFromEnv("LIZARD_CAPTURE_SILENCE_RMS", v => CaptureSilenceRms = double.Parse(v));
+        SetFromEnv("LIZARD_CAMERA_DEVICE", v => CameraDevice = v);
+        SetFromEnv("LIZARD_CAMERA_BRIGHTNESS_THRESHOLD", v => CameraBrightnessThreshold = int.Parse(v));
+        SetFromEnv("LIZARD_CAMERA_CHECK_INTERVAL_SEC", v => CameraCheckIntervalSec = double.Parse(v));
+        SetFromEnv("LIZARD_CAPTURE_MIN_AUDIO_MS", v => CaptureMinAudioMs = int.Parse(v));
     }
 
     private void ApplyJsonConfig()
@@ -163,6 +173,10 @@ public sealed class LizardConfig
                     case "CaptureMaxDurationMs": CaptureMaxDurationMs = kvp.Value.GetInt32(); break;
                     case "CaptureSilenceThresholdMs": CaptureSilenceThresholdMs = kvp.Value.GetInt32(); break;
                     case "CaptureSilenceRms": CaptureSilenceRms = kvp.Value.GetDouble(); break;
+                    case "CameraDevice": CameraDevice = kvp.Value.GetString() ?? CameraDevice; break;
+                    case "CameraBrightnessThreshold": CameraBrightnessThreshold = kvp.Value.GetInt32(); break;
+                    case "CameraCheckIntervalSec": CameraCheckIntervalSec = kvp.Value.GetDouble(); break;
+                    case "CaptureMinAudioMs": CaptureMinAudioMs = kvp.Value.GetInt32(); break;
                 }
             }
         }
