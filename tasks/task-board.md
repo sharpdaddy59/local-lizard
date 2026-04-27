@@ -44,7 +44,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | V2.1 | Wire audio capture → STT | ✅ (`380b6b2`) | `CaptureAndTranscribeAsync()` already connects mic → WAV → Whisper → text. `StartListeningLoopAsync()` provides continuous loop with brightness gate. |
-| V2.2 | Wire LLM output → Piper TTS → aplay | ❌ | Piper → speaker already works independently (Apr 26 test), just automate |
+| V2.2 | Wire LLM output → Piper TTS → aplay | ✅ (`b32afd9`) | `SpeakAsync()` pipes Piper → aplay (zero temp files). `StartConversationLoopAsync(onHeard)` = full listen → respond → speak loop. Test harness has echo responder for hardware validation. |
 | V2.3 | End-to-end smoke test (speak → hear reply via RC08) | ❌ | First full physical voice conversation on brazos |
 | V2.4 | Latency measurement & logging | ❌ | Target: <5s total for deterministic intents. shm for WAV files avoids disk wear (Flux's suggestion). |
 | V2.5 | Volume normalization (input & output) | ❌ | Consistent levels regardless of mic distance |
