@@ -97,8 +97,8 @@ public sealed partial class IntentRouter
                 }
                 if (!tools.TryGet("search_web", out var tool))
                     return null;
-                var result = await RunTool(tool, ("q", $"weather in {place}"), ct);
-                return $"Here's the weather for {place}: {result}";
+                var raw = await RunTool(tool, ("q", $"weather in {place}"), ct);
+                return FormatWeatherResponse(place, raw);
             },
         });
 
@@ -286,6 +286,77 @@ public sealed partial class IntentRouter
         });
     }
 
+    // ── Weather formatting ──
+
+    /// <summary>
+    /// Extract temperature, conditions, and humidity from raw Brave search
+    /// results and format a clean one-line weather response.
+    /// Falls back to first-result summary if extraction fails.
+    /// </summary>
+    private static string FormatWeatherResponse(string place, string raw)
+    {
+        // Strip HTML tags
+        var clean = HtmlTagPattern().Replace(raw, "");
+
+        // Extract temperature — best effort, first match wins
+        // Patterns: "86°F", "86 F", "highs in the mid 80s", "low 60s", "mid 80s", "
+        var tempMatch = TempExtractPattern().Match(clean);
+        var temp = tempMatch.Success ? tempMatch.Groups["temp"].Value.Trim() : null;
+
+        // Extract conditions — look for common weather words near the sentence start
+        var condMatch = ConditionExtractPattern().Match(clean);
+        var conditions = condMatch.Success ? condMatch.Groups["cond"].Value.Trim().ToLowerInvariant() : null;
+
+        // Extract humidity percentage
+        var humidityMatch = HumidityExtractPattern().Match(clean);
+        var humidity = humidityMatch.Success ? humidityMatch.Groups["hum"].Value.Trim() : null;
+
+        // Extract wind speed
+        var windMatch = WindExtractPattern().Match(clean);
+        var wind = windMatch.Success ? windMatch.Groups["wind"].Value.Trim() : null;
+
+        // Build response
+        var parts = new List<string>();
+        var placeTitle = char.ToUpperInvariant(place[0]) + place[1..];
+
+        if (temp is not null && conditions is not null)
+            parts.Add($"In {placeTitle} it's currently {temp} and {conditions}");
+        else if (temp is not null)
+            parts.Add($"In {placeTitle} the temperature is {temp}");
+        else if (conditions is not null)
+            parts.Add($"In {placeTitle} it's {conditions}");
+
+        if (humidity is not null)
+            parts.Add($"humidity {humidity}");
+        if (wind is not null)
+            parts.Add($"wind {wind}");
+
+        if (parts.Count > 0)
+            return string.Join(", ", parts) + ".";
+
+        // Fallback: return just the first result title + description (skip URLs)
+        var lines = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var firstTitle = "";
+        var firstDesc = "";
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim().TrimStart('-', ' ');
+            if (trimmed.StartsWith("URL:"))
+                continue;
+            if (string.IsNullOrEmpty(firstTitle) && !string.IsNullOrWhiteSpace(trimmed))
+                firstTitle = trimmed;
+            else if (string.IsNullOrEmpty(firstDesc) && !string.IsNullOrWhiteSpace(trimmed))
+                firstDesc = trimmed;
+            if (!string.IsNullOrEmpty(firstTitle) && !string.IsNullOrEmpty(firstDesc))
+                break;
+        }
+
+        if (!string.IsNullOrEmpty(firstTitle))
+            return $"{firstTitle}: {firstDesc}";
+
+        return $"Here's the weather for {placeTitle}: {raw}";
+    }
+
     // ── Math safety ──
 
     /// <summary>
@@ -399,4 +470,37 @@ public sealed partial class IntentRouter
 
     [GeneratedRegex(@"run (?:shell |)(?:command |)(?<cmd>.+)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
     private static partial Regex ShellPattern();
+
+    // ── Weather extraction regexes ──
+
+    /// <summary>
+    /// Strip HTML tags like <strong>, </strong>, <br>, etc.
+    /// </summary>
+    [GeneratedRegex(@"<[^>]+>", RegexOptions.Compiled)]
+    private static partial Regex HtmlTagPattern();
+
+    /// <summary>
+    /// Extract temperature — matches "86°F", "86°C", "86 F", "mid 80s",
+    /// "highs in the (mid|low|upper|)\d+s", "lows in the \d+s", "\d+°"
+    /// </summary>
+    [GeneratedRegex(@"(?<temp>(?:highs|high|low|lows|mid|upper)\s+(?:in\s+the\s+)?(?:mid\s+|low\s+|upper\s+)?\d{2}s\s*(?:°[FC]|degrees)?|\d{2,3}\s*°[FC]|\d{2,3}\s*°|\d{2,3}\s+F(?:ahrenheit)?)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex TempExtractPattern();
+
+    /// <summary>
+    /// Extract conditions — weather adjectives near the start of a sentence
+    /// </summary>
+    [GeneratedRegex(@"(?<cond>sunny|partly cloudy|mostly cloudy|cloudy|rain|rainy|showers|thunderstorms|storms|stormy|clear|fair|foggy|windy|snow|snowy|overcast|drizzle|hazy|humid|hot|cold|warm|cool|breezy)", RegexOptions.IgnoreCase | RegexOptions.Compiled)]
+    private static partial Regex ConditionExtractPattern();
+
+    /// <summary>
+    /// Extract humidity percentage like "Humidity: 45%", "humidity 45%"
+    /// </summary>
+    [GeneratedRegex(@"[Hh]umidity[\s:]+(?<hum>\d+%)", RegexOptions.Compiled)]
+    private static partial Regex HumidityExtractPattern();
+
+    /// <summary>
+    /// Extract wind like "Wind: 10 mph", "wind 10 mph", "winds at 15 mph"
+    /// </summary>
+    [GeneratedRegex(@"[Ww]ind[s]?[\s:]+(?:at\s+)?(?<wind>\d+\s*mph)", RegexOptions.Compiled)]
+    private static partial Regex WindExtractPattern();
 }
