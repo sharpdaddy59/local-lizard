@@ -430,8 +430,8 @@ public sealed class VoicePipeline : IDisposable
             wavData = await SynthesizeToMemoryWithWrapperAsync(text, ct);
         }
 
-        // Play via aplay (pipe WAV data directly)
-        await PlayAudioAsync(wavData, ct);
+        // Play via aplay on the configured playback device
+        await PlayAudioAsync(wavData, _config.AlsaPlaybackDevice, ct);
     }
 
     /// <summary>
@@ -469,16 +469,16 @@ public sealed class VoicePipeline : IDisposable
     }
 
     /// <summary>
-    /// Play raw WAV bytes through aplay.
+    /// Play raw WAV bytes through aplay on the specified ALSA device.
     /// Captures stderr for diagnostics if aplay fails.
     /// </summary>
-    private static async Task PlayAudioAsync(byte[] wavData, CancellationToken ct)
+    private static async Task PlayAudioAsync(byte[] wavData, string device, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
         {
             FileName = "aplay",
-            // No flags — let aplay read format from WAV header
-            Arguments = "",
+            // Specify device explicitly — default may be HDMI (no speakers)
+            Arguments = $"-D {device}",
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

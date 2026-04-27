@@ -58,6 +58,9 @@ public sealed class LizardConfig
     public int CaptureSilenceThresholdMs { get; set; } = 800;
     public double CaptureSilenceRms { get; set; } = 0.02;
 
+    // ---- Audio playback ----
+    public string AlsaPlaybackDevice { get; set; } = "hw:CARD=RC08,DEV=0";
+
     // ---- Camera brightness gate ----
     public string CameraDevice { get; set; } = "/dev/video0";
     public int CameraBrightnessThreshold { get; set; } = 10;
@@ -123,6 +126,7 @@ public sealed class LizardConfig
         SetFromEnv("LIZARD_CAMERA_BRIGHTNESS_THRESHOLD", v => CameraBrightnessThreshold = int.Parse(v));
         SetFromEnv("LIZARD_CAMERA_CHECK_INTERVAL_SEC", v => CameraCheckIntervalSec = double.Parse(v));
         SetFromEnv("LIZARD_CAPTURE_MIN_AUDIO_MS", v => CaptureMinAudioMs = int.Parse(v));
+        SetFromEnv("LIZARD_ALSA_PLAYBACK_DEVICE", v => AlsaPlaybackDevice = v);
     }
 
     private void ApplyJsonConfig()
@@ -177,6 +181,7 @@ public sealed class LizardConfig
                     case "CameraBrightnessThreshold": CameraBrightnessThreshold = kvp.Value.GetInt32(); break;
                     case "CameraCheckIntervalSec": CameraCheckIntervalSec = kvp.Value.GetDouble(); break;
                     case "CaptureMinAudioMs": CaptureMinAudioMs = kvp.Value.GetInt32(); break;
+                    case "AlsaPlaybackDevice": AlsaPlaybackDevice = kvp.Value.GetString() ?? AlsaPlaybackDevice; break;
                 }
             }
         }
