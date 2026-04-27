@@ -15,14 +15,16 @@ public sealed class VoicePipeline : IDisposable
     private readonly LizardConfig _config;
     private WhisperSTTService? _whisperService;
     private PiperTTSService? _piperService;
-    private AlsaCapture? _alsaCapture;
+    private readonly Lazy<AlsaCapture> _alsaCapture;
     private bool _useWhisperNet = true;
     private bool _usePiperService = true;
+    private int _whisperNetFailCount;
     private bool _disposed;
 
     public VoicePipeline(LizardConfig config)
     {
         _config = config;
+        _alsaCapture = new Lazy<AlsaCapture>(() => new AlsaCapture(config.AlsaDevice), LazyThreadSafetyMode.ExecutionAndPublication);
         InitializeWhisperService();
         InitializePiperService();
     }
@@ -85,7 +87,14 @@ public sealed class VoicePipeline : IDisposable
             {
                 Console.WriteLine($"Whisper.net failed: {ex.Message}");
                 Console.WriteLine("Falling back to process wrapper");
-                _useWhisperNet = false;
+                _whisperNetFailCount++;
+                // Re-enable Whisper.net after 3 consecutive failures reset
+                // (a restart or different input might succeed)
+                if (_whisperNetFailCount >= 3)
+                {
+                    Console.WriteLine("Whisper.net disabled after 3 failures. Restart pipeline to re-enable.");
+                    _useWhisperNet = false;
+                }
             }
         }
 
@@ -216,10 +225,10 @@ public sealed class VoicePipeline : IDisposable
     /// <returns>Transcribed text, or empty string if nothing detected.</returns>
     public async Task<string> CaptureAndTranscribeAsync(CancellationToken ct = default)
     {
-        _alsaCapture ??= new AlsaCapture(_config.AlsaDevice);
+        var alsa = _alsaCapture.Value;
 
         // Capture raw PCM with silence-based endpointing
-        var pcmData = await _alsaCapture.ReadUntilSilenceAsync(
+        var pcmData = await alsa.ReadUntilSilenceAsync(
             maxDurationMs: _config.CaptureMaxDurationMs,
             silenceThresholdMs: _config.CaptureSilenceThresholdMs,
             silenceRmsThreshold: _config.CaptureSilenceRms,
@@ -240,14 +249,16 @@ public sealed class VoicePipeline : IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Whisper.net failed: {ex.Message}");
+                Console.WriteLine($"Whisper.net failed during capture: {ex.Message}");
                 Console.WriteLine("Falling back to process wrapper");
-                _useWhisperNet = false;
+                _whisperNetFailCount++;
+                if (_whisperNetFailCount >= 3)
+                    _useWhisperNet = false;
             }
         }
 
-        // Fallback: save to temp WAV, run whisper.cpp process
-        var tempPath = Path.GetTempFileName() + ".wav";
+        // Fallback: write to temp WAV via random filename (no pre-creation)
+        var tempPath = Path.Combine(Path.GetTempPath(), $"locallizard-{Path.GetRandomFileName()}.wav");
         try
         {
             await File.WriteAllBytesAsync(tempPath, wavStream.ToArray(), ct);
@@ -331,8 +342,7 @@ public sealed class VoicePipeline : IDisposable
             _piperService?.Dispose();
             _piperService = null;
             
-            _alsaCapture?.Dispose();
-            _alsaCapture = null;
+            _alsaCapture.Value.Dispose();
             
             _disposed = true;
         }
