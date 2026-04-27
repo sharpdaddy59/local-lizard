@@ -59,7 +59,7 @@ public sealed class LizardConfig
     public double CaptureSilenceRms { get; set; } = 0.02;
 
     // ---- Audio playback ----
-    public string AlsaPlaybackDevice { get; set; } = "hw:CARD=RC08,DEV=0";
+    public string AlsaPlaybackDevice { get; set; } = "plughw:CARD=RC08,DEV=0";
 
     // ---- Camera brightness gate ----
     public string CameraDevice { get; set; } = "/dev/video0";
