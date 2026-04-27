@@ -24,7 +24,7 @@
 |---|------|--------|-------|
 | V0.1 | RC08 mic capture test (arecord/ffmpeg) | ✅ | 16KHz mono S16_LE verified on brazos headless. Mic gain set to 50% (35dB) — balances voice pickup vs background noise (A/C). Capture gain at 100% was causing excessive ambient noise. |
 | V0.2 | C# audio capture via ALSA P/Invoke | ✅ (`534ba73`) | `AlsaCapture` — P/Invoke wrapper around `libasound.so.2`. `ReadAsync()`, `ReadUntilSilenceAsync()` (energy VAD), xrun recovery. |
-| V0.3 | Buffering & chunking for STT | ❌ | Fixed-size buffers, silence detection |
+| V0.3 | Buffering & chunking for STT | ✅ (`380b6b2`) | `ReadUntilSilenceAsync` (50ms chunks + energy VAD) built into AlsaCapture. `CaptureAndTranscribeAsync` wires into VoicePipeline. `PcmToWavStream` helper for Whisper. |
 | V0.4 | Recording timeout / trigger mechanism | ❌ | Max duration, silence timeout, manual trigger |
 
 ### Phase 1 — Speech-to-Text Pipeline
