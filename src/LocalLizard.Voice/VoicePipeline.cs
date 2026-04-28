@@ -343,7 +343,11 @@ public sealed class VoicePipeline : IDisposable
 
                 // Filter: reject empty or very short transcriptions (noise)
                 if (string.IsNullOrWhiteSpace(text) || text.Length < 2)
+                {
+                    // Yield between empty captures to avoid pinning a core
+                    await Task.Delay(50, ct);
                     continue;
+                }
 
                 Console.WriteLine($"[ListeningLoop] Heard: \"{text}\"");
 

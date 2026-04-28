@@ -6,5 +6,5 @@
   "MaxTokens": 384,
   "LlmTemperature": 0.3,
   "VisionEnabled": false,
-  "VadThresholdDb": -45
+  "VadThresholdDb": -25
 }
