@@ -45,9 +45,10 @@
 |---|------|--------|-------|
 | V2.1 | Wire audio capture → STT | ✅ (`380b6b2`) | `CaptureAndTranscribeAsync()` already connects mic → WAV → Whisper → text. `StartListeningLoopAsync()` provides continuous loop with brightness gate. |
 | V2.2 | Wire LLM output → Piper TTS → aplay | ✅ (`b32afd9`) | `SpeakAsync()` pipes Piper → aplay (zero temp files). `StartConversationLoopAsync(onHeard)` = full listen → respond → speak loop. Test harness has echo responder for hardware validation. |
-| V2.3 | End-to-end smoke test (speak → hear reply via RC08) | ❌ | First full physical voice conversation on brazos |
+| V2.3 | End-to-end smoke test (speak → hear reply via RC08) | ✅ | **Proven Apr 27.** Test 6: heard "Yes I can actually hear you very well" → echoed via TTS. Test 7: conversation loop heard + responded via speaker. Wily confirmed hearing both. |
 | V2.4 | Latency measurement & logging | ❌ | Target: <5s total for deterministic intents. shm for WAV files avoids disk wear (Flux's suggestion). |
 | V2.5 | Volume normalization (input & output) | ❌ | Consistent levels regardless of mic distance |
+| V2.6 | Cold-start silence detection fix | ✅ | Three-state VAD machine implemented. `ReadUntilSilenceVadAsync` in AlsaCapture. Hard timeout 12s, speech endpoint 1.5s, min speech 300ms. Code reviewed by Metamorph, two bugs caught and fixed by Flux (minSpeechMs enforcement, partial return on hard timeout). Hardware tested Apr 28 — test 6 and test 7 both pass. |
 
 ### Phase 3 — Interaction Design
 *Goal: Natural-feeling voice interaction*
@@ -55,7 +56,7 @@
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | V3.1 | Push-to-talk vs always-listening decision | ❌ | **For headless box: always-listening is default.** Telegram voice is push-to-talk (already works). Physical interaction needs VAD loop. |
-| V3.2 | Voice Activity Detection (VAD) | ❌ | **Flux feedback:** `webrtcvad` is Python-only. For C#: (a) P/Invoke wrapper around C `webrtcvad` library, or (b) simple energy-based detector (RMS threshold, ~20 lines). Energy detection is pragmatic start for a quiet room. |
+| V3.2 | Voice Activity Detection (VAD) | ✅ | `EnergyVad` class with `IVoiceActivityDetector` interface. RMS energy in dBFS, default -35 dBFS threshold. Configurable via `VadThresholdDb`. Interface-based — webrtcvad can slot in later. Hardware tested Apr 28. Note: -35 dBFS catches keyboard clicking in quiet rooms; may need tuning to -38/-40 when closer to desk. |
 | V3.3 | Multi-turn conversation flow | ❌ | Context across voice turns vs fresh each time |
 | V3.4 | Wake word (future release) | ❌ | Post-MVP. "Hey Lizard" via Porcupine or similar. Requires separate ML model. |
 | V3.5 | Timeout & cancellation handling | ❌ | User stops speaking → cancel pending TTS |
@@ -75,13 +76,13 @@
 ## Milestones
 
 - **M1:** Mic captures 16KHz WAV, whisper returns text ✅
-- **M2:** Full voice loop works end-to-end via RC08 ❌ (Phase 2)
+- **M2:** Full voice loop works end-to-end via RC08 ✅ (Apr 27 — test 7 conversation loop)
 - **M3:** Sub-5s latency on deterministic intents ❌ (Phase 2)
 - **M4:** Voice pipeline reliable enough for daily use ❌ (Phase 4)
 
 ## Known Issues
 
-- **Cold-start silence detection:** `ReadUntilSilenceAsync` can time out before user starts speaking if there's a delay between opening the device and speech onset. Fix: add a pre-roll grace period or require speech before counting silence. Only affects "start then listen" pattern (e.g., `/listen` command). Always-listening loop (test 4) is unaffected.
+- **VAD threshold sensitivity:** At -35 dBFS, keyboard clicking can trigger voice detection in quiet rooms (no AC). May need tuning to -38 or -40 dBFS for desk-proximity use. Not blocking — configurable via `VadThresholdDb`.
 
 ## Not Yet Scoped
 
@@ -98,8 +99,9 @@
 
 ## Hardware Reference
 
-- **Mic:** RC08 webcam, ALSA Card 1, Capture at 50% gain (35dB), 16KHz mono S16_LE
-- **Speaker:** RC08 webcam, ALSA Card 1, PCM at 75%, 48KHz (Piper resamples from 22050Hz)
+- **Mic:** RC08 webcam, ALSA Card 1, Capture at 50% gain (35dB), 16KHz mono S16_LE. Mic activity does NOT light the LED.
+- **Speaker:** RC08 webcam, ALSA Card 1, PCM at 75%, 48KHz (Piper resamples from 22050Hz). Speaker activity lights blue LED.
+- **LED:** Blue = camera or speaker active. Red = cover closed (hardware privacy indicator). Off = idle. Mic capture does NOT trigger LED.
 - **GPU:** Radeon Vega (Vulkan for whisper.cpp, 1.81x CPU speed)
 - **Card 2:** CX20632 Analog (motherboard) — headphone jack only, no built-in speaker
 - **Audio workaround:** `sg audio -c` for subprocess calls. P/Invoke path requires permanent `audio` group (logout/login needed).
@@ -120,5 +122,6 @@
 
 - `/shared/projects/local-lizard/docs/headless_voice_agent_design.md`
 - `/shared/projects/local-lizard/docs/expanded-intent-router-implementation.md`
+- `/shared/projects/local-lizard/docs/vad-coldstart-proposal.md`
 - Current Telegram bot: `src/LocalLizard.Telegram/BotService.cs` (voice pipeline already wired)
 - Voice library: `src/LocalLizard.Voice/` (WhisperSTTService, PiperTTSService, VoicePipeline)

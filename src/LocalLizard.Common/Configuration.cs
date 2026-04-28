@@ -58,6 +58,12 @@ public sealed class LizardConfig
     public int CaptureSilenceThresholdMs { get; set; } = 800;
     public double CaptureSilenceRms { get; set; } = 0.02;
 
+    // ---- VAD (V2.6 / V3.2) ----
+    public float VadThresholdDb { get; set; } = -35f;
+    public int VadHardTimeoutMs { get; set; } = 12000;
+    public int VadSpeechTimeoutMs { get; set; } = 1500;
+    public int VadMinSpeechMs { get; set; } = 300;
+
     // ---- Audio playback ----
     public string AlsaPlaybackDevice { get; set; } = "plughw:CARD=RC08,DEV=0";
 
@@ -127,6 +133,10 @@ public sealed class LizardConfig
         SetFromEnv("LIZARD_CAMERA_CHECK_INTERVAL_SEC", v => CameraCheckIntervalSec = double.Parse(v));
         SetFromEnv("LIZARD_CAPTURE_MIN_AUDIO_MS", v => CaptureMinAudioMs = int.Parse(v));
         SetFromEnv("LIZARD_ALSA_PLAYBACK_DEVICE", v => AlsaPlaybackDevice = v);
+        SetFromEnv("LIZARD_VAD_THRESHOLD_DB", v => VadThresholdDb = float.Parse(v));
+        SetFromEnv("LIZARD_VAD_HARD_TIMEOUT_MS", v => VadHardTimeoutMs = int.Parse(v));
+        SetFromEnv("LIZARD_VAD_SPEECH_TIMEOUT_MS", v => VadSpeechTimeoutMs = int.Parse(v));
+        SetFromEnv("LIZARD_VAD_MIN_SPEECH_MS", v => VadMinSpeechMs = int.Parse(v));
     }
 
     private void ApplyJsonConfig()
@@ -182,6 +192,10 @@ public sealed class LizardConfig
                     case "CameraCheckIntervalSec": CameraCheckIntervalSec = kvp.Value.GetDouble(); break;
                     case "CaptureMinAudioMs": CaptureMinAudioMs = kvp.Value.GetInt32(); break;
                     case "AlsaPlaybackDevice": AlsaPlaybackDevice = kvp.Value.GetString() ?? AlsaPlaybackDevice; break;
+                    case "VadThresholdDb": VadThresholdDb = kvp.Value.GetSingle(); break;
+                    case "VadHardTimeoutMs": VadHardTimeoutMs = kvp.Value.GetInt32(); break;
+                    case "VadSpeechTimeoutMs": VadSpeechTimeoutMs = kvp.Value.GetInt32(); break;
+                    case "VadMinSpeechMs": VadMinSpeechMs = kvp.Value.GetInt32(); break;
                 }
             }
         }

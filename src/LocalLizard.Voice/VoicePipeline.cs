@@ -221,19 +221,22 @@ public sealed class VoicePipeline : IDisposable
 
     /// <summary>
     /// Capture audio from the physical mic (via ALSA) and transcribe to text.
-    /// Uses energy-based VAD to detect speech boundaries.
+    /// Uses energy-based VAD to detect speech boundaries (three-state machine).
+    /// In always-listening mode, returns empty on timeout so the loop restarts cleanly.
     /// </summary>
     /// <param name="ct">Cancellation token (stops capture immediately).</param>
     /// <returns>Transcribed text, or empty string if nothing detected.</returns>
     public async Task<string> CaptureAndTranscribeAsync(CancellationToken ct = default)
     {
         var alsa = _alsaCapture.Value;
+        var vad = new EnergyVad(_config.VadThresholdDb);
 
-        // Capture raw PCM with silence-based endpointing
-        var pcmData = await alsa.ReadUntilSilenceAsync(
-            maxDurationMs: _config.CaptureMaxDurationMs,
-            silenceThresholdMs: _config.CaptureSilenceThresholdMs,
-            silenceRmsThreshold: _config.CaptureSilenceRms,
+        // Capture raw PCM with three-state VAD
+        var pcmData = await alsa.ReadUntilSilenceVadAsync(
+            vad: vad,
+            hardTimeoutMs: _config.VadHardTimeoutMs,
+            speechTimeoutMs: _config.VadSpeechTimeoutMs,
+            minSpeechMs: _config.VadMinSpeechMs,
             ct: ct);
 
         if (pcmData.Length == 0)
@@ -297,6 +300,7 @@ public sealed class VoicePipeline : IDisposable
 
         var lastCheck = DateTime.MinValue;
         var listening = true; // Assume open until first check
+        var prevListening = (bool?)null; // Track state changes for logging
         var gateCheckCount = 0;
 
         Console.WriteLine("[ListeningLoop] Starting. Camera cover = privacy toggle.");
@@ -312,6 +316,13 @@ public sealed class VoicePipeline : IDisposable
                     listening = await gate.IsOpenAsync(ct);
                     lastCheck = now;
                     gateCheckCount++;
+
+                    // Log state changes
+                    if (prevListening != listening)
+                    {
+                        Console.WriteLine($"[ListeningLoop] Camera cover: {(listening ? "OPEN — listening enabled" : "CLOSED — privacy mode")}");
+                        prevListening = listening;
+                    }
 
                     if (!listening)
                     {

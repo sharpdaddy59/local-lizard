@@ -189,20 +189,134 @@ public sealed class AlsaCapture : IDisposable
 
     /// <summary>
     /// Read audio until silence is detected or timeout reached.
-    /// Simple energy-based VAD: stops when RMS < threshold for minimum silence duration.
+    /// Uses <see cref="IVoiceActivityDetector"/> for voice/silence classification.
     /// </summary>
-    /// <param name="maxDurationMs">Maximum recording duration.</param>
-    /// <param name="silenceThresholdMs">Ms of silence before stopping.</param>
-    /// <param name="silenceRmsThreshold">RMS threshold for silence (0.0-1.0).</param>
+    /// <param name="vad">Voice activity detector instance.</param>
+    /// <param name="hardTimeoutMs">Total max capture time before giving up (default 12000).</param>
+    /// <param name="speechTimeoutMs">Ms of silence after speech onset before declaring endpoint (default 1500).</param>
+    /// <param name="minSpeechMs">Minimum speech duration to accept (shorter = noise, default 300).</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>Byte array of S16_LE PCM samples.</returns>
+    /// <returns>S16_LE PCM bytes, or empty array if timeout in WaitingForSpeech.</returns>
+    /// <remarks>
+    /// Three-state machine:
+    ///   WaitingForSpeech → (voice detected) → InSpeech → (silence for speechTimeoutMs) → EndOfSpeech
+    /// All states share a single hardTimeout deadline.
+    /// </remarks>
+    public async Task<byte[]> ReadUntilSilenceVadAsync(
+        IVoiceActivityDetector vad,
+        int hardTimeoutMs = 12000,
+        int speechTimeoutMs = 1500,
+        int minSpeechMs = 300,
+        CancellationToken ct = default)
+    {
+        const int chunkMs = 50;
+        var chunkFrames = chunkMs * SampleRate / 1000;
+        var chunkBytes = chunkFrames * FrameSize;
+        var speechChunksNeeded = minSpeechMs / chunkMs;
+        var silenceChunksNeeded = speechTimeoutMs / chunkMs;
+
+        var captured = new System.IO.MemoryStream();
+        var speechChunks = 0;
+        var silenceChunks = 0;
+        var totalMs = 0;
+        var state = "WaitingForSpeech";
+
+        try
+        {
+            while (totalMs < hardTimeoutMs)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var chunk = await ReadAsync(chunkMs, ct);
+                totalMs += chunkMs;
+
+                var isVoice = vad.IsVoice(chunk.AsSpan());
+
+                switch (state)
+                {
+                    case "WaitingForSpeech":
+                        if (isVoice)
+                        {
+                            // Speech onset detected — start buffering
+                            captured.Write(chunk, 0, chunk.Length);
+                            speechChunks = 1;
+                            silenceChunks = 0;
+                            state = "InSpeech";
+                        }
+                        // Drop silent chunks — no accumulation until speech
+                        break;
+
+                    case "InSpeech":
+                        captured.Write(chunk, 0, chunk.Length);
+
+                        if (isVoice)
+                        {
+                            speechChunks++;
+                            silenceChunks = 0;
+                        }
+                        else
+                        {
+                            silenceChunks++;
+
+                            if (silenceChunks >= silenceChunksNeeded)
+                            {
+                                // Check if total speech is long enough to be valid
+                                if (speechChunks >= speechChunksNeeded)
+                                {
+                                    // Endpoint reached — trim trailing silence and return
+                                    var trimBytes = silenceChunks * chunkBytes;
+                                    var result = new byte[captured.Length - trimBytes];
+                                    captured.Position = 0;
+                                    _ = captured.Read(result, 0, result.Length);
+                                    return result;
+                                }
+
+                                // Too short (cough, click, noise burst) — reset and keep listening
+                                captured.SetLength(0);
+                                speechChunks = 0;
+                                silenceChunks = 0;
+                                state = "WaitingForSpeech";
+                            }
+                        }
+                        break;
+                }
+            }
+
+            // Hard timeout
+            switch (state)
+            {
+                case "WaitingForSpeech":
+                    return []; // No one spoke
+                case "InSpeech":
+                    // Return whatever we captured — 12s of speech is too much to lose,
+                    // even in always-listening mode. The partial is meaningful.
+                    // Only drop if below minimum speech threshold (noise floor).
+                    if (captured.Length > speechChunksNeeded * chunkBytes)
+                        return captured.ToArray();
+                    return [];
+                default:
+                    return [];
+            }
+        }
+        finally
+        {
+            captured.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Read audio until silence is detected or timeout reached.
+    /// Legacy overload using the old RMS-based silence detection.
+    /// Kept for backward compatibility — new code should prefer <see cref="ReadUntilSilenceVadAsync"/>.
+    /// </summary>
+    [Obsolete("Use ReadUntilSilenceVadAsync with IVoiceActivityDetector instead")]
     public async Task<byte[]> ReadUntilSilenceAsync(
         int maxDurationMs = 5000,
         int silenceThresholdMs = 800,
         double silenceRmsThreshold = 0.02,
         CancellationToken ct = default)
     {
-        const int chunkMs = 50; // Evaluate VAD every 50ms
+        const int chunkMs = 50;
         var chunkFrames = chunkMs * SampleRate / 1000;
         var chunkBytes = chunkFrames * FrameSize;
         var silenceFramesNeeded = silenceThresholdMs / chunkMs;
@@ -221,14 +335,12 @@ public sealed class AlsaCapture : IDisposable
                 allAudio.Write(chunk, 0, chunk.Length);
                 totalMs += chunkMs;
 
-                // Simple RMS energy detection
                 var rms = ComputeRms(chunk);
                 if (rms < silenceRmsThreshold)
                 {
                     silenceFrames++;
                     if (silenceFrames >= silenceFramesNeeded)
                     {
-                        // Trim trailing silence from the buffer
                         var trimBytes = silenceFrames * chunkBytes;
                         var result = new byte[allAudio.Length - trimBytes];
                         allAudio.Position = 0;

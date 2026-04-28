@@ -203,7 +203,11 @@ class Program
 
         Console.WriteLine("  Starting listening loop. Camera cover = on/off.");
         Console.WriteLine("  Speak to test. Press Ctrl+C to stop.");
-        Console.CancelKeyPress += (_, _) => cts.Cancel();
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            try { cts.Cancel(); } catch (ObjectDisposedException) { }
+        };
 
         var turnCount = 0;
         await pipeline.StartListeningLoopAsync(async text =>
@@ -258,7 +262,16 @@ class Program
         Console.WriteLine("  Starting conversation loop with echo responder.");
         Console.WriteLine("  Speak and it will echo back. Camera cover = privacy toggle.");
         Console.WriteLine("  Press Ctrl+C to stop.");
-        Console.CancelKeyPress += (_, _) => cts.Cancel();
+        var cancelled = false;
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true; // Prevent immediate process termination
+            if (!cancelled)
+            {
+                cancelled = true;
+                cts.Cancel();
+            }
+        };
 
         var turnCount = 0;
         await pipeline.StartConversationLoopAsync(text =>
