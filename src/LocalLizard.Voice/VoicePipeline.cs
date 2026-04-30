@@ -22,6 +22,11 @@ public sealed class VoicePipeline : IDisposable
     private int _whisperNetFailCount;
     private bool _disposed;
 
+    /// <summary>
+    /// Diagnostic metrics collector. Accessible externally for aggregated reporting.
+    /// </summary>
+    public PipelineMetrics Metrics { get; } = new PipelineMetrics("VoicePipeline");
+
     public VoicePipeline(LizardConfig config)
     {
         _config = config;
@@ -228,29 +233,43 @@ public sealed class VoicePipeline : IDisposable
     /// <returns>Transcribed text, or empty string if nothing detected.</returns>
     public async Task<string> CaptureAndTranscribeAsync(CancellationToken ct = default)
     {
+        Metrics.Reset();
         var alsa = _alsaCapture.Value;
         var vad = new EnergyVad(_config.VadThresholdDb);
 
         // Capture raw PCM with three-state VAD
+        var vadSw = Stopwatch.StartNew();
         var pcmData = await alsa.ReadUntilSilenceVadAsync(
             vad: vad,
             hardTimeoutMs: _config.VadHardTimeoutMs,
             speechTimeoutMs: _config.VadSpeechTimeoutMs,
             minSpeechMs: _config.VadMinSpeechMs,
             ct: ct);
+        vadSw.Stop();
+        PipelineMetrics.IncrementVadCalls();
+        Metrics.Record("VAD capture", vadSw.ElapsedMilliseconds);
 
         if (pcmData.Length == 0)
             return string.Empty;
 
         // Wrap raw PCM in WAV header for Whisper
+        var pcmToWavSw = Stopwatch.StartNew();
         using var wavStream = PcmToWavStream(pcmData, AlsaCapture.SampleRate, AlsaCapture.Channels);
+        pcmToWavSw.Stop();
+        Metrics.Record("PCM→WAV conversion", pcmToWavSw.ElapsedMilliseconds);
 
         // Transcribe using Whisper.net (with process wrapper fallback)
         if (_useWhisperNet && _whisperService != null)
         {
             try
             {
-                return await _whisperService.TranscribeAsync(wavStream, ct);
+                var sttSw = Stopwatch.StartNew();
+                var result = await _whisperService.TranscribeAsync(wavStream, ct);
+                sttSw.Stop();
+                PipelineMetrics.IncrementSttCalls();
+                var warmTag = PipelineMetrics.IsSttCold ? "❄️ cold" : "♨️ warm";
+                Metrics.Record($"STT (Whisper) {warmTag}", sttSw.ElapsedMilliseconds);
+                return result;
             }
             catch (Exception ex)
             {
@@ -266,8 +285,13 @@ public sealed class VoicePipeline : IDisposable
         var tempPath = Path.Combine(Path.GetTempPath(), $"locallizard-{Path.GetRandomFileName()}.wav");
         try
         {
+            var sw = Stopwatch.StartNew();
             await File.WriteAllBytesAsync(tempPath, wavStream.ToArray(), ct);
-            return await TranscribeWithProcessWrapperAsync(tempPath, ct);
+            var result = await TranscribeWithProcessWrapperAsync(tempPath, ct);
+            sw.Stop();
+            PipelineMetrics.IncrementSttCalls();
+            Metrics.Record("STT (subprocess)", sw.ElapsedMilliseconds);
+            return result;
         }
         finally
         {
@@ -465,20 +489,47 @@ public sealed class VoicePipeline : IDisposable
     {
         await StartListeningLoopAsync(async text =>
         {
+            var loopSw = Stopwatch.StartNew();
+            Console.WriteLine($"[VoiceLoop] Heard: \"{text}\"");
+
             try
             {
+                // Time the LLM / intent router
+                var llmSw = Stopwatch.StartNew();
                 var response = await onHeard(text);
+                llmSw.Stop();
+                Metrics.Record("LLM / Intent", llmSw.ElapsedMilliseconds);
+
                 if (!string.IsNullOrWhiteSpace(response))
                 {
                     var preview = response.Length > 80 ? response[..80] + "..." : response;
-                    Console.WriteLine($"[VoiceLoop] Speaking: \"{preview}\"");
-                    await SpeakAsync(response, ct);
+
+                    // Time TTS synthesis
+                    var ttsSw = Stopwatch.StartNew();
+                    var wavBytes = await SynthesizeToMemoryAsync(response, ct);
+                    ttsSw.Stop();
+                    PipelineMetrics.IncrementTtsCalls();
+                    var ttsWarmTag = PipelineMetrics.IsTtsCold ? "❄️ cold" : "♨️ warm";
+                    Metrics.Record($"TTS (Piper) {ttsWarmTag}", ttsSw.ElapsedMilliseconds);
+
+                    // Time audio playback
+                    var playSw = Stopwatch.StartNew();
+                    await PlayAudioAsync(wavBytes, _config.AlsaPlaybackDevice, ct);
+                    playSw.Stop();
+                    Metrics.Record("Audio playback", playSw.ElapsedMilliseconds);
+
+                    Console.WriteLine($"[VoiceLoop] Spoke: \"{preview}\"");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[VoiceLoop] Response error: {ex.Message}");
             }
+
+            loopSw.Stop();
+            Console.WriteLine($"[VoiceLoop] Cycle complete: {loopSw.ElapsedMilliseconds}ms");
+            Metrics.Dump(); // Print breakdown
+
             return true; // Always continue listening
         }, ct);
     }
